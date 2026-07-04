@@ -225,7 +225,7 @@ export default function Results() {
       <View style={styles.footer}>
         <TouchableOpacity
           style={[styles.footBtn, { backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.border }]}
-          onPress={() => { resetInputsToDefaults(); router.back(); }}
+          onPress={() => { resetInputsToDefaults(); router.replace('/airframe'); }}
           testID="reset-btn"
         >
           <Text style={{ color: COLORS.text, fontWeight: '800' }}>Reset</Text>

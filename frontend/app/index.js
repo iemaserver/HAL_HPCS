@@ -1,150 +1,80 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, Image, Animated, Easing } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { ChevronRight, FolderClock, Settings as SettingsIcon } from 'lucide-react-native';
-import { COLORS, RADIUS, SPACING, SHADOW } from '../src/theme/theme';
+import { GRADIENTS } from '../src/theme/theme';
+import { useAppState } from '../src/store/AppState';
+
+const HAL_LOGO = require('../assets/logos/hal-logo.png');
+const MIN_SPLASH_MS = 1600;
 
 /**
- * Landing page — HAL logo + Made in India + Proceed CTA.
- *
- * ⚑ LOGOS ARE LOCAL ASSETS — replace the two files below with your actual
- *   logo artwork (no code changes needed). See assets/logos/README.md.
+ * Splash screen — shown on cold start while the SQLite-backed app state
+ * hydrates. Always waits MIN_SPLASH_MS even if state is ready sooner, so the
+ * animation doesn't flash for a single frame on fast devices.
  */
-const HAL_LOGO = require('../assets/logos/hal-logo.png');
-const MADE_IN_INDIA_LOGO = require('../assets/logos/made-in-india.png');
-
-export default function Landing() {
+export default function Splash() {
   const router = useRouter();
+  const { ready } = useAppState();
+  const [minTimeElapsed, setMinTimeElapsed] = useState(false);
+  const barAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const t = setTimeout(() => setMinTimeElapsed(true), MIN_SPLASH_MS);
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(barAnim, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        Animated.timing(barAnim, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+      ])
+    ).start();
+    return () => clearTimeout(t);
+  }, [barAnim]);
+
+  useEffect(() => {
+    if (ready && minTimeElapsed) {
+      router.replace('/airframe');
+    }
+  }, [ready, minTimeElapsed, router]);
+
+  const barWidth = barAnim.interpolate({ inputRange: [0, 1], outputRange: ['10%', '90%'] });
 
   return (
-    <SafeAreaView style={styles.root} testID="landing-screen">
-      <ScrollView contentContainerStyle={styles.scroll} bounces={false}>
-        <View style={styles.skyPanel}>
-          <View style={styles.topBar}>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/reports')} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} testID="open-reports-btn">
-              <FolderClock size={20} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/settings')} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} testID="open-settings-btn">
-              <SettingsIcon size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
-
-          {/* HAL Logo — replace assets/logos/hal-logo.png with real artwork */}
-          <View style={styles.logoCard} testID="hal-logo">
-            <Image source={HAL_LOGO} style={styles.halLogoImg} resizeMode="contain" />
-          </View>
-
-          <Text style={styles.appTitle} testID="landing-title">Helicopter Performance System</Text>
-          <Text style={styles.appSub}>Hindustan Aeronautics Limited</Text>
-
-          {/* Made in India — replace assets/logos/made-in-india.png with real artwork */}
-          <View style={styles.miiCard} testID="made-in-india-logo">
-            <Image source={MADE_IN_INDIA_LOGO} style={styles.miiImg} resizeMode="contain" />
-          </View>
+    <LinearGradient colors={GRADIENTS.splash} style={styles.root} testID="splash-screen">
+      <View style={styles.center}>
+        <View style={styles.logoCard}>
+          <Image source={HAL_LOGO} style={styles.logo} resizeMode="contain" />
         </View>
+        <Text style={styles.maharatna}>A Maharatna CPSE</Text>
+      </View>
 
-        <View style={styles.card}>
-          <Text style={styles.pillLabel}>OFFLINE · TABLET · MOBILE</Text>
-          <Text style={styles.heading}>Aviation-Grade Performance Calculator</Text>
-          <Text style={styles.body}>
-            Compute pressure altitude, density altitude, all-up-weight and power margins for Chetak, Cheetah and Cheetal helicopters — fully offline.
-          </Text>
+      <View style={styles.titleBlock}>
+        <Text style={styles.title}>Chetak · Cheetah · Cheetal</Text>
+        <Text style={styles.subtitle}>(Helicopter Performance System)</Text>
+      </View>
 
-          <TouchableOpacity
-            style={styles.cta}
-            onPress={() => router.push('/calculations')}
-            testID="proceed-to-calculation-btn"
-            activeOpacity={0.9}
-          >
-            <Text style={styles.ctaText}>Proceed to Calculation</Text>
-            <ChevronRight size={22} color="#fff" />
-          </TouchableOpacity>
-
-          <View style={styles.featureRow}>
-            <FeatureItem label="Offline SQLite" />
-            <FeatureItem label="PDF Reports" />
-            <FeatureItem label="Voice & Pen Input" />
-          </View>
+      <View style={styles.footer}>
+        <View style={styles.barTrack}>
+          <Animated.View style={[styles.barFill, { width: barWidth }]} />
         </View>
-
-        <Text style={styles.version}>v1.0.0 · Offline · HAL India</Text>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-function FeatureItem({ label }) {
-  return (
-    <View style={styles.feature}>
-      <View style={styles.featureDot} />
-      <Text style={styles.featureText}>{label}</Text>
-    </View>
+        <Text style={styles.loadingText}>Loading…</Text>
+      </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: COLORS.primary },
-  scroll: { flexGrow: 1 },
-  skyPanel: {
-    backgroundColor: COLORS.primary,
-    paddingBottom: SPACING.xxl,
-    paddingHorizontal: SPACING.lg,
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
-  },
-  topBar: {
-    flexDirection: 'row', justifyContent: 'flex-end', gap: SPACING.sm,
-    paddingTop: SPACING.sm,
-  },
-  iconBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center', justifyContent: 'center',
-  },
+  root: { flex: 1, alignItems: 'center', justifyContent: 'space-between', paddingVertical: 80 },
+  center: { alignItems: 'center', marginTop: 60 },
   logoCard: {
-    width: 140, height: 140, borderRadius: 70,
-    backgroundColor: '#fff', alignSelf: 'center', marginTop: SPACING.lg,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 3, borderColor: '#FFD54F',
-    ...SHADOW,
+    width: 220, alignItems: 'center', justifyContent: 'center',
   },
-  halLogoImg: { width: 110, height: 110 },
-  appTitle: {
-    color: '#fff', fontSize: 26, fontWeight: '900', textAlign: 'center',
-    marginTop: SPACING.lg, letterSpacing: -0.5,
-  },
-  appSub: {
-    color: '#E0F2FE', fontSize: 13, textAlign: 'center',
-    fontWeight: '600', marginTop: 4, letterSpacing: 2, textTransform: 'uppercase',
-  },
-  miiCard: {
-    alignSelf: 'center', marginTop: SPACING.lg,
-    backgroundColor: '#fff', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8,
-    ...SHADOW,
-  },
-  miiImg: { width: 150, height: 54 },
-  card: {
-    backgroundColor: COLORS.card, margin: SPACING.lg, borderRadius: RADIUS.lg, padding: SPACING.xl,
-    ...SHADOW,
-  },
-  pillLabel: {
-    color: COLORS.primaryDark, fontSize: 11, fontWeight: '800',
-    letterSpacing: 1.5, marginBottom: SPACING.sm,
-  },
-  heading: { fontSize: 22, fontWeight: '900', color: COLORS.text, letterSpacing: -0.4 },
-  body: { color: COLORS.textMuted, marginTop: SPACING.sm, lineHeight: 20, fontSize: 14 },
-  cta: {
-    marginTop: SPACING.xl, backgroundColor: COLORS.primary, paddingVertical: 18,
-    borderRadius: RADIUS.lg, flexDirection: 'row', justifyContent: 'center',
-    alignItems: 'center', gap: SPACING.sm, ...SHADOW,
-  },
-  ctaText: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  featureRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: SPACING.xl },
-  feature: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  featureDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.success },
-  featureText: { color: COLORS.textMuted, fontSize: 11, fontWeight: '600' },
-  version: {
-    textAlign: 'center', color: '#E0F2FE', fontSize: 11, marginTop: SPACING.sm, marginBottom: SPACING.lg,
-  },
+  logo: { width: 220, height: 110 },
+  maharatna: { marginTop: 4, color: '#0F172A', fontSize: 14, fontWeight: '800', letterSpacing: 0.5 },
+  titleBlock: { alignItems: 'center', paddingHorizontal: 24 },
+  title: { color: '#0F172A', fontSize: 20, fontWeight: '900', textAlign: 'center' },
+  subtitle: { color: '#0F172A', fontSize: 13, fontWeight: '600', marginTop: 4, opacity: 0.75, textAlign: 'center' },
+  footer: { alignItems: 'center', width: '60%' },
+  barTrack: { width: '100%', height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.6)', overflow: 'hidden' },
+  barFill: { height: 4, borderRadius: 2, backgroundColor: '#fff' },
+  loadingText: { marginTop: 10, color: '#0F172A', fontSize: 12, fontWeight: '700' },
 });

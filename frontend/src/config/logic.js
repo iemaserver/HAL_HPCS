@@ -135,6 +135,23 @@ export const FORMULA_META = [
   { key: 'POWER_REQ', label: 'Power Required (shp)', vars: 'baseline_power_req, auw, mauw, density_alt' },
 ];
 
+/* ---------------- WIZARD FIELDS (Operational Inputs step order + limits) ---------------- */
+/**
+ * Limits are expressed in BASE units (ft, °C, kg, hPa) — the same units
+ * `inputs` are stored in. The wizard converts to/from the display unit
+ * for validation messages.
+ */
+export const WIZARD_FIELDS = [
+  { key: 'elevation', label: 'Elevation', unitKey: 'altitude', unitOptions: ['ft', 'm'], min: 0, max: 20000 },
+  { key: 'qnh', label: 'QNH (Nautical Height)', unitKey: 'pressure', unitOptions: ['hPa', 'inHg'], min: 850, max: 1050 },
+  { key: 'temperature', label: 'Temperature', unitKey: 'temperature', unitOptions: ['C', 'F'], min: -20, max: 50 },
+  { key: 'acWeight', label: 'Aircraft Weight', unitKey: 'weight', unitOptions: ['kg', 'lb'], min: 500, max: 3000 },
+  { key: 'crewWeight', label: 'Crew Weight', unitKey: 'weight', unitOptions: ['kg', 'lb'], min: 0, max: 500 },
+  { key: 'fuel', label: 'Fuel Onboard', unitKey: 'weight', unitOptions: ['kg', 'lb'], min: 0, max: 500 },
+  { key: 'additionalLoad', label: 'Additional Load', unitKey: 'weight', unitOptions: ['kg', 'lb'], min: 0, max: 500 },
+  { key: 'payload', label: 'Load', unitKey: 'weight', unitOptions: ['kg', 'lb'], min: 0, max: 800 },
+];
+
 /* ---------------- CALC ENGINE ---------------- */
 const safeEval = (expr, ctx) => {
   try {

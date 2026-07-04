@@ -14,6 +14,11 @@ export const COLORS = {
   dark: '#0F172A',
 };
 
+export const GRADIENTS = {
+  splash: ['#EAF6FF', '#8FD6FA', '#1EA7E8'],
+  header: ['#3FC1F0', '#1EA7E8'],
+};
+
 export const SPACING = {
   xs: 4,
   sm: 8,

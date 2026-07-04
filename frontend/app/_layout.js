@@ -14,7 +14,9 @@ export default function RootLayout() {
           <StatusBar style="light" />
           <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
             <Stack.Screen name="index" />
-            <Stack.Screen name="calculations" />
+            <Stack.Screen name="airframe" />
+            <Stack.Screen name="wizard" />
+            <Stack.Screen name="review" />
             <Stack.Screen name="results" />
             <Stack.Screen name="reports" />
             <Stack.Screen name="settings" />

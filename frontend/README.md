@@ -55,23 +55,19 @@ npx expo prebuild
 npx expo run:android      # or: npx expo run:ios
 ```
 
-## Replacing the Logos
+## Replacing the Logo
 
-Drop your real PNG artwork into `frontend/assets/logos/`, replacing the two
-placeholder files:
-
-- `hal-logo.png`        → HAL circular logo (recommended 512×512 transparent PNG)
-- `made-in-india.png`   → "Made in India" badge (recommended 512×256 transparent PNG)
-
-No code changes needed — just overwrite the files and reload the app.
+Drop your real PNG artwork into `frontend/assets/logos/hal-logo.png`
+(recommended 512×512 transparent PNG). It's used on the splash screen.
+No code changes needed — just overwrite the file and reload the app.
 
 ## Features
 
 - 3 helicopter profiles: **Chetak, Cheetah, Cheetal**
-- Landing → Calculations → Performance Results flow
-- 8 input fields (Elevation, QNH, Temperature, AC Weight, Crew Weight, Fuel, Additional Load, Load) — **all blank on start; user enters every value**
+- Splash → Select Airframe → step-by-step Operational Inputs wizard → Review Details → Performance Results flow
+- 8 input fields (Elevation, QNH, Temperature, AC Weight, Crew Weight, Fuel, Additional Load, Load), one per wizard step — **all blank on start; user enters every value**
 - 8 computed outputs (PA, ISA, Density Altitude, Air Density, AB Temp, AUW, Power Avail, Power Req)
-- Multi-modal input: **numpad, handwriting pad (with recognize→confirm→correct loop), voice (web) / dev-build (native)**
+- Multi-modal input per step: **on-screen numpad + voice dictation (web) / dev-build (native)**
 - Unit toggles: ft/m, °C/°F, kg/lb, hPa/inHg
 - **AUW vs Altitude** SVG chart with current-point indicator + Graph/Table view
 - Save / Share professional HAL Report as PDF (offline via `expo-print` + `expo-sharing`)
@@ -83,11 +79,8 @@ No code changes needed — just overwrite the files and reload the app.
 
 ## Voice Input Notes
 - **Web preview**: uses browser `SpeechRecognition` API (Chrome/Edge) — works offline once the browser has cached models.
-- **Expo Go**: limited (Expo Go cannot bundle native voice libs). A toast will ask the user to type.
+- **Expo Go**: limited (Expo Go cannot bundle native voice libs). An inline error will ask the user to type.
 - **Dev Build / Production APK**: add `expo-speech-recognition` (on-device via iOS Speech framework and Android SpeechRecognizer) — rebuild the dev client.
-
-## Handwriting Recognition
-The canvas captures strokes with `react-native-svg`. A lightweight heuristic suggests a number; the user then **confirms or corrects manually** — a hybrid flow as requested. Swap the `recognize()` function in `src/components/InputDrawer.js` with a bundled TFLite MNIST model for true on-device recognition.
 
 ## Configuration Layer (Central Logic)
 All default values and formulas live in:
@@ -102,13 +95,15 @@ Formulas are plain JavaScript expressions. Available variables are listed under 
 frontend/
 ├── app/                       # expo-router file-based routes
 │   ├── _layout.js
-│   ├── index.js               # Landing page
-│   ├── calculations.js        # Inputs + multi-modal drawer
-│   ├── results.js             # Performance Results
-│   ├── reports.js             # Saved reports list
-│   └── settings.js            # Live config editor
+│   ├── index.js               # Splash screen
+│   ├── airframe.js            # Select Airframe
+│   ├── wizard.js               # One-field-per-step Operational Inputs wizard
+│   ├── review.js              # Review Details + Live Preview
+│   ├── results.js              # Performance Results
+│   ├── reports.js              # Saved reports list
+│   └── settings.js             # Live config editor
 ├── assets/
-│   └── logos/                 # hal-logo.png, made-in-india.png (replaceable)
+│   └── logos/                 # hal-logo.png (replaceable)
 ├── src/
 │   ├── config/logic.js
 │   ├── db/database.js         # Platform re-export
@@ -117,7 +112,6 @@ frontend/
 │   ├── store/AppState.js
 │   ├── theme/theme.js
 │   ├── components/
-│   │   ├── InputDrawer.js
 │   │   ├── AUWChart.js
 │   │   └── HalLoader.js
 │   └── utils/pdf.js
