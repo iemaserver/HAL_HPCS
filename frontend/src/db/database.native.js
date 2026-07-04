@@ -3,27 +3,34 @@
  * Same public API as database.web.js.
  */
 import * as SQLite from 'expo-sqlite';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DEFAULT_AIRCRAFT, DEFAULT_FORMULAS } from '../config/logic';
 
-let _db = null;
-const getDB = async () => {
-  if (_db) return _db;
-  _db = await SQLite.openDatabaseAsync('hal_performance.db');
-  await _db.execAsync(`
-    CREATE TABLE IF NOT EXISTS reports (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      aircraft_id TEXT NOT NULL,
-      payload_json TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS config (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-  `);
-  return _db;
+// Cache the in-flight open+init PROMISE (not just the resolved db) so
+// concurrent callers (e.g. Promise.all([loadAircraftDefaults(), loadFormulas()])
+// on app boot) await the same connection instead of racing to open the
+// database file twice, which crashes with a native NullPointerException.
+let _dbPromise = null;
+const getDB = () => {
+  if (!_dbPromise) {
+    _dbPromise = (async () => {
+      const db = await SQLite.openDatabaseAsync('hal_performance.db');
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS reports (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          aircraft_id TEXT NOT NULL,
+          payload_json TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS config (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+      `);
+      return db;
+    })();
+  }
+  return _dbPromise;
 };
 
 const CFG_AIRCRAFT = 'aircraft_defaults';
@@ -94,10 +101,10 @@ export const resetConfig = async () => {
 };
 
 export const getDeviceId = async () => {
-  let id = await AsyncStorage.getItem(DEVICE_ID_KEY);
+  let id = await readConfig(DEVICE_ID_KEY);
   if (!id) {
     id = `HAL${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    await AsyncStorage.setItem(DEVICE_ID_KEY, id);
+    await writeConfig(DEVICE_ID_KEY, id);
   }
   return id;
 };

@@ -108,7 +108,7 @@ frontend/
 │   ├── config/logic.js
 │   ├── db/database.js         # Platform re-export
 │   ├── db/database.native.js  # SQLite impl
-│   ├── db/database.web.js     # AsyncStorage fallback
+│   ├── db/database.web.js     # localStorage fallback
 │   ├── store/AppState.js
 │   ├── theme/theme.js
 │   ├── components/

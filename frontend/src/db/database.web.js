@@ -1,10 +1,9 @@
 /**
  * Web implementation of the offline DB layer.
- * Uses AsyncStorage (localStorage under the hood) because expo-sqlite's web
- * variant requires WASM artifacts that the Metro preview cannot resolve.
- * The public API mirrors database.native.js exactly.
+ * Uses the browser's built-in localStorage directly (no extra package) since
+ * expo-sqlite's web variant requires WASM artifacts that the Metro preview
+ * cannot resolve. The public API mirrors database.native.js exactly.
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DEFAULT_AIRCRAFT, DEFAULT_FORMULAS } from '../config/logic';
 
 const WEB_REPORTS_KEY = 'hal_reports';
@@ -12,55 +11,59 @@ const CFG_AIRCRAFT = 'aircraft_defaults';
 const CFG_FORMULAS = 'formulas';
 const DEVICE_ID_KEY = 'hal_device_id';
 
+const getItem = async (key) => localStorage.getItem(key);
+const setItem = async (key, value) => localStorage.setItem(key, value);
+const removeItem = async (key) => localStorage.removeItem(key);
+
 export const insertReport = async (r) => {
-  const raw = await AsyncStorage.getItem(WEB_REPORTS_KEY);
+  const raw = await getItem(WEB_REPORTS_KEY);
   const list = raw ? JSON.parse(raw) : [];
   const filtered = list.filter((x) => x.id !== r.id);
   filtered.unshift(r);
-  await AsyncStorage.setItem(WEB_REPORTS_KEY, JSON.stringify(filtered));
+  await setItem(WEB_REPORTS_KEY, JSON.stringify(filtered));
 };
 
 export const listReports = async () => {
-  const raw = await AsyncStorage.getItem(WEB_REPORTS_KEY);
+  const raw = await getItem(WEB_REPORTS_KEY);
   return raw ? JSON.parse(raw) : [];
 };
 
 export const deleteReport = async (id) => {
-  const raw = await AsyncStorage.getItem(WEB_REPORTS_KEY);
+  const raw = await getItem(WEB_REPORTS_KEY);
   const list = raw ? JSON.parse(raw) : [];
-  await AsyncStorage.setItem(WEB_REPORTS_KEY, JSON.stringify(list.filter((x) => x.id !== id)));
+  await setItem(WEB_REPORTS_KEY, JSON.stringify(list.filter((x) => x.id !== id)));
 };
 
 export const loadAircraftDefaults = async () => {
-  const raw = await AsyncStorage.getItem(`hal_cfg_${CFG_AIRCRAFT}`);
+  const raw = await getItem(`hal_cfg_${CFG_AIRCRAFT}`);
   if (raw) { try { return JSON.parse(raw); } catch { /* ignore */ } }
   return DEFAULT_AIRCRAFT;
 };
 
 export const saveAircraftDefaults = async (d) => {
-  await AsyncStorage.setItem(`hal_cfg_${CFG_AIRCRAFT}`, JSON.stringify(d));
+  await setItem(`hal_cfg_${CFG_AIRCRAFT}`, JSON.stringify(d));
 };
 
 export const loadFormulas = async () => {
-  const raw = await AsyncStorage.getItem(`hal_cfg_${CFG_FORMULAS}`);
+  const raw = await getItem(`hal_cfg_${CFG_FORMULAS}`);
   if (raw) { try { return { ...DEFAULT_FORMULAS, ...JSON.parse(raw) }; } catch { /* ignore */ } }
   return DEFAULT_FORMULAS;
 };
 
 export const saveFormulas = async (f) => {
-  await AsyncStorage.setItem(`hal_cfg_${CFG_FORMULAS}`, JSON.stringify(f));
+  await setItem(`hal_cfg_${CFG_FORMULAS}`, JSON.stringify(f));
 };
 
 export const resetConfig = async () => {
-  await AsyncStorage.removeItem(`hal_cfg_${CFG_AIRCRAFT}`);
-  await AsyncStorage.removeItem(`hal_cfg_${CFG_FORMULAS}`);
+  await removeItem(`hal_cfg_${CFG_AIRCRAFT}`);
+  await removeItem(`hal_cfg_${CFG_FORMULAS}`);
 };
 
 export const getDeviceId = async () => {
-  let id = await AsyncStorage.getItem(DEVICE_ID_KEY);
+  let id = await getItem(DEVICE_ID_KEY);
   if (!id) {
     id = `HAL${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    await AsyncStorage.setItem(DEVICE_ID_KEY, id);
+    await setItem(DEVICE_ID_KEY, id);
   }
   return id;
 };

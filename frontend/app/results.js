@@ -39,11 +39,15 @@ export default function Results() {
   );
 
   const openSave = async () => {
-    const deviceId = await getDeviceId();
-    const now = new Date();
-    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    setReportName(`${deviceId}_${stamp}`);
-    setSaveOpen(true);
+    try {
+      const deviceId = await getDeviceId();
+      const now = new Date();
+      const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      setReportName(`${deviceId}_${stamp}`);
+      setSaveOpen(true);
+    } catch (e) {
+      Toast.show({ type: 'error', text1: 'Could not open Save Report', text2: String(e?.message || e), position: 'top' });
+    }
   };
 
   const buildReport = (name) => ({
@@ -60,9 +64,13 @@ export default function Results() {
       return;
     }
     const r = buildReport(reportName.trim());
-    await insertReport(r);
-    setSaveOpen(false);
-    Toast.show({ type: 'success', text1: 'Report Saved', text2: reportName.trim(), position: 'top' });
+    try {
+      await insertReport(r);
+      setSaveOpen(false);
+      Toast.show({ type: 'success', text1: 'Report Saved', text2: reportName.trim(), position: 'top' });
+    } catch (e) {
+      Toast.show({ type: 'error', text1: 'Save failed', text2: String(e?.message || e), position: 'top' });
+    }
   };
 
   const doShare = async () => {
