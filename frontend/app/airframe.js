@@ -7,7 +7,7 @@ import { COLORS, RADIUS, SPACING, SHADOW } from '../src/theme/theme';
 import { useAppState } from '../src/store/AppState';
 
 const HELI_IMG = {
-  chetak: 'https://images.unsplash.com/photo-1758292581042-21a187fbbdd4?crop=entropy&cs=srgb&fm=jpg&w=400&q=80',
+  chetak: 'https://images.unsplash.com/photo-1528474078150-7324b0375b1c?crop=entropy&cs=srgb&fm=jpg&w=400&q=80',
   cheetah: 'https://images.unsplash.com/photo-1759610314761-855c55114110?crop=entropy&cs=srgb&fm=jpg&w=400&q=80',
   cheetal: 'https://images.pexels.com/photos/5620366/pexels-photo-5620366.jpeg?auto=compress&cs=tinysrgb&w=400',
 };
