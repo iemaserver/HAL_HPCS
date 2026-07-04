@@ -2,6 +2,8 @@ import React from 'react';
 import { View, Text, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import { COLORS, SPACING } from '../theme/theme';
 
+const HAL_LOGO = require('../../assets/logos/hal-logo.png');
+
 /**
  * HAL Logo spinner used as loader throughout the app.
  */
@@ -10,7 +12,7 @@ export default function HalLoader({ size = 60, label = 'Loading…' }) {
     <View style={styles.wrap} testID="hal-loader">
       <View style={[styles.logoWrap, { width: size * 1.4, height: size * 1.4 }]}>
         <Image
-          source={{ uri: 'https://upload.wikimedia.org/wikipedia/en/thumb/9/99/Hindustan_Aeronautics_Limited_Logo.svg/1200px-Hindustan_Aeronautics_Limited_Logo.svg.png' }}
+          source={HAL_LOGO}
           style={{ width: size, height: size }}
           resizeMode="contain"
         />
