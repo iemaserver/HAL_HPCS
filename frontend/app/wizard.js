@@ -152,6 +152,7 @@ export default function Wizard() {
               placeholder={`Enter ${field.label.toLowerCase()}`}
               placeholderTextColor="#94A3B8"
               keyboardType="numeric"
+              showSoftInputOnFocus={false}
               testID={`wizard-input-${field.key}`}
             />
             <Text style={styles.inputUnit}>{unitLabel(displayUnit)}</Text>
@@ -198,9 +199,9 @@ export default function Wizard() {
 
 function Numpad({ value, onPress }) {
   const rows = [
-    ['7', '8', '9'],
-    ['4', '5', '6'],
     ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
     ['.', '0', 'back'],
   ];
   return (
