@@ -12,9 +12,9 @@ import {
   useSpeechRecognitionEvent,
   nativeSpeechAvailable,
 } from '../src/utils/speech';
-import { COLORS, RADIUS, SPACING, SHADOW } from '../src/theme/theme';
+import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
-import { fromBaseUnit, toBaseUnit, WIZARD_FIELDS } from '../src/config/logic';
+import { fromBaseUnit, toBaseUnit, WIZARD_FIELDS } from '../src/constants/logic';
 
 const ICONS = {
   elevation: Mountain,

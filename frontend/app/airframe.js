@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView } from 'rea
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronRight, FolderClock, Settings as SettingsIcon } from 'lucide-react-native';
-import { COLORS, RADIUS, SPACING, SHADOW } from '../src/theme/theme';
+import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
 
 const HELI_IMG = {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Line, Path, Circle, Text as SvgText, G } from 'react-native-svg';
-import { COLORS } from '../theme/theme';
+import { COLORS } from '../constants/theme';
 
 /**
  * AUWChart — Simple line chart of limit curve (red) vs current point (blue dot)

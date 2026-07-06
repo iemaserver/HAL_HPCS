@@ -9,11 +9,11 @@ import {
   ChevronLeft, CheckCircle2, AlertTriangle, Scale, Package, Zap, Dumbbell,
   RefreshCw, Save, Share2, FolderClock, BarChart3, TableProperties,
 } from 'lucide-react-native';
-import { COLORS, RADIUS, SPACING, SHADOW } from '../src/theme/theme';
+import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
-import { buildAUWvsAltitudeCurve } from '../src/config/logic';
+import { buildAUWvsAltitudeCurve } from '../src/constants/logic';
 import AUWChart from '../src/components/AUWChart';
-import { insertReport, getDeviceId } from '../src/db/database';
+import { insertReport, getDeviceId } from '../src/services/database';
 import { generateAndSharePdf } from '../src/utils/pdf';
 
 export default function Results() {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Image, ActivityIndicator } from 'react-native';
-import { COLORS, SPACING } from '../theme/theme';
+import { COLORS, SPACING } from '../constants/theme';
 
 const HAL_LOGO = require('../../assets/logos/hal-logo.png');
 

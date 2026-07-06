@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Image, Animated, Easing } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { GRADIENTS } from '../src/theme/theme';
+import { GRADIENTS } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
 
 const HAL_LOGO = require('../assets/logos/hal-logo.png');

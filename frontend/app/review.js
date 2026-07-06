@@ -6,9 +6,9 @@ import Toast from 'react-native-toast-message';
 import {
   ChevronLeft, Mountain, Thermometer, Fuel, Package, User, Gauge, Weight, Zap,
 } from 'lucide-react-native';
-import { COLORS, RADIUS, SPACING, SHADOW } from '../src/theme/theme';
+import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
-import { fromBaseUnit, WIZARD_FIELDS } from '../src/config/logic';
+import { fromBaseUnit, WIZARD_FIELDS } from '../src/constants/logic';
 
 const HELI_IMG = {
   chetak: 'https://images.unsplash.com/photo-1528474078150-7324b0375b1c?crop=entropy&cs=srgb&fm=jpg&w=400&q=80',

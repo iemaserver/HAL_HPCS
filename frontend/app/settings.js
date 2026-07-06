@@ -6,10 +6,10 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import { ChevronLeft, RotateCcw, Save as SaveIcon } from 'lucide-react-native';
-import { COLORS, RADIUS, SPACING, SHADOW } from '../src/theme/theme';
+import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
-import { FORMULA_META, DEFAULT_AIRCRAFT, DEFAULT_FORMULAS, computePerformance } from '../src/config/logic';
-import { resetConfig } from '../src/db/database';
+import { FORMULA_META, DEFAULT_AIRCRAFT, DEFAULT_FORMULAS, computePerformance } from '../src/constants/logic';
+import { resetConfig } from '../src/services/database';
 
 /**
  * Settings / Config Editor

@@ -4,8 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import { ChevronLeft, Share2, Trash2, FileText, Inbox } from 'lucide-react-native';
-import { COLORS, RADIUS, SPACING, SHADOW } from '../src/theme/theme';
-import { listReports, deleteReport } from '../src/db/database';
+import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
+import { listReports, deleteReport } from '../src/services/database';
 import { generateAndSharePdf } from '../src/utils/pdf';
 
 export default function Reports() {

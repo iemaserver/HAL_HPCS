@@ -7,13 +7,13 @@ import {
   DEFAULT_AIRCRAFT,
   DEFAULT_FORMULAS,
   computePerformance,
-} from '../config/logic';
+} from '../constants/logic';
 import {
   loadAircraftDefaults,
   loadFormulas,
   saveAircraftDefaults,
   saveFormulas,
-} from '../db/database';
+} from '../services/database';
 
 const Ctx = createContext(null);
 
