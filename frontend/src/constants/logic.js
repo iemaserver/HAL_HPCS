@@ -26,6 +26,10 @@ export const DEFAULT_AIRCRAFT = {
     defaultElevation: 0,
     defaultQNH: 1013.25,
     defaultTemp: 15,
+    // Performance chart config — ref: CHETAK GRAPH + COMMON GRAPHS (SA316B)
+    vmaxFactor: 1222, // ~108 kts at 1450 kg, sea level
+    rocBase: 2700,   // ~600 ft/min at MAUW, sea level (SA316B ROC chart)
+    rocC: 0.22,
   },
   cheetah: {
     id: 'cheetah',
@@ -41,6 +45,10 @@ export const DEFAULT_AIRCRAFT = {
     defaultElevation: 0,
     defaultQNH: 1013.25,
     defaultTemp: 15,
+    // Performance chart config — ref: CHEETAH GRAPH (Lama)
+    vmaxFactor: 1221, // same Lama calibration as CHETAK GRAPH left (~108 kts at 1450 kg)
+    rocBase: 3500,
+    rocC: 0.25,  // ~875 ft/min at MAUW, sea level
   },
   cheetal: {
     id: 'cheetal',
@@ -56,6 +64,10 @@ export const DEFAULT_AIRCRAFT = {
     defaultElevation: 0,
     defaultQNH: 1013.25,
     defaultTemp: 15,
+    // Performance chart config — higher-power (847 shp vs 550 shp on Cheetah)
+    vmaxFactor: 1265, // slightly higher speed envelope from more power
+    rocBase: 5000,
+    rocC: 0.20,
   },
 };
 
@@ -243,7 +255,7 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
   };
 };
 
-/* ---------------- AUW vs ALTITUDE CURVE ---------------- */
+/* ---------------- AUW vs ALTITUDE LIMIT CURVE (hover ceiling) ---------------- */
 export const buildAUWvsAltitudeCurve = (aircraft, formulas = DEFAULT_FORMULAS) => {
   const points = [];
   for (let altK = 0; altK <= 20; altK += 1) {
@@ -259,3 +271,79 @@ export const buildAUWvsAltitudeCurve = (aircraft, formulas = DEFAULT_FORMULAS) =
   }
   return points;
 };
+
+/* ---------------- PERFORMANCE CHARTS (aircraft-specific) ---------------- */
+// Ref: CHETAK GRAPH "Maximum Speed in Level Flight" (vmax)
+//      CHEETAH GRAPH "Rate of Climb" / Lama manual (roc)
+
+export const CHART_DA_MAX = 22000;   // ft — Y-axis upper limit
+export const CHART_VMAX_MIN = 50;    // knots
+export const CHART_VMAX_MAX = 130;   // knots
+export const CHART_ROC_MAX = 2000;   // ft/min
+
+// Five evenly-spaced reference AUW values from 20 % above empty to MAUW
+export const getChartRefAuws = (aircraft) => {
+  const lo = aircraft.emptyWeight + Math.round((aircraft.mauw - aircraft.emptyWeight) * 0.2);
+  const step = (aircraft.mauw - lo) / 4;
+  return Array.from({ length: 5 }, (_, i) => Math.round(lo + i * step));
+};
+
+// Power-available fraction for level-flight speed (exponential with altitude)
+const _pAvailVmax = (da) => Math.exp(-da / 20000);
+
+// Power-available fraction for climb (linear, gentler — Lama operates to ~24 kft)
+const _pAvailRoc = (da) => Math.max(0.2, 1 - da / 60000);
+
+// Max speed (knots) at density altitude da_ft and AUW auw_kg
+// Formula: Vmax ∝ P_avail^(1/3) / AUW^(1/3), calibrated to chart data
+export const computeVmaxKnots = (aircraft, da_ft, auw_kg) =>
+  Math.max(0, aircraft.vmaxFactor * Math.pow(_pAvailVmax(da_ft), 1 / 3) / Math.pow(auw_kg, 1 / 3));
+
+// Rate of climb (ft/min) at density altitude da_ft and AUW auw_kg
+// Linear excess-power model calibrated to Lama ROC chart
+export const computeROCFpm = (aircraft, da_ft, auw_kg) =>
+  Math.max(0, aircraft.rocBase * (_pAvailRoc(da_ft) - auw_kg / aircraft.mauw + aircraft.rocC));
+
+// Build the five reference AUW curves for the performance chart.
+// type: 'vmax' | 'roc' — pass explicitly so both charts can be built for any aircraft.
+export const buildPerformanceCurves = (aircraft, type) => {
+  const refAuws = getChartRefAuws(aircraft);
+  const daSteps = Array.from({ length: 45 }, (_, i) => i * 500);
+  return refAuws.map((auw) => ({
+    auw,
+    points: daSteps.map((da) => ({
+      da,
+      value: type === 'vmax'
+        ? Math.round(computeVmaxKnots(aircraft, da, auw))
+        : Math.round(computeROCFpm(aircraft, da, auw)),
+    })).filter((p) => p.value > (type === 'vmax' ? 40 : 0)),
+  }));
+};
+
+// Current operating point to plot on the performance chart.
+export const computeCurrentPerfPoint = (aircraft, da_ft, auw_kg, type) => ({
+  da: da_ft,
+  value: type === 'vmax'
+    ? Math.round(computeVmaxKnots(aircraft, da_ft, auw_kg))
+    : Math.round(computeROCFpm(aircraft, da_ft, auw_kg)),
+});
+
+/* ---- PA vs Density Altitude ISA conversion chart (COMMON GRAPHS bottom-right) ---- */
+// Formula: DA = PA × 1.23526 + 118.8 × (OAT − 15)
+// Rearranged: PA = (DA − 118.8 × (OAT − 15)) / 1.23526
+const _ISA_K = 1 + 118.8 * (1.98 / 1000); // ≈ 1.23526
+
+export const CHART_OAT_MIN = -30;
+export const CHART_OAT_MAX = 50;
+export const CHART_PA_MAX = 20000;
+export const CHART_PA_DA_CONTOURS = [0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000, 20000];
+
+export const buildPADAContours = () =>
+  CHART_PA_DA_CONTOURS.map((da) => {
+    const points = [];
+    for (let oat = CHART_OAT_MIN; oat <= CHART_OAT_MAX; oat += 1) {
+      const pa = (da - 118.8 * (oat - 15)) / _ISA_K;
+      if (pa >= 0 && pa <= CHART_PA_MAX) points.push({ oat, pa });
+    }
+    return { da, points };
+  });

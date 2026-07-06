@@ -7,12 +7,13 @@ import { useRouter } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import {
   ChevronLeft, CheckCircle2, AlertTriangle, Scale, Package, Zap, Dumbbell,
-  RefreshCw, Save, Share2, FolderClock, BarChart3, TableProperties,
+  RefreshCw, Save, Share2, FolderClock,
 } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
-import { buildAUWvsAltitudeCurve } from '../src/constants/logic';
-import AUWChart from '../src/components/AUWChart';
+import { buildPerformanceCurves, computeCurrentPerfPoint } from '../src/constants/logic';
+import PerformanceChart from '../src/components/PerformanceChart';
+import ISAChart from '../src/components/ISAChart';
 import { insertReport, getDeviceId } from '../src/services/database';
 import { generateAndSharePdf } from '../src/utils/pdf';
 
@@ -23,20 +24,25 @@ export default function Results() {
   const aircraft = aircraftDefaults[selectedAircraftId];
   const { width } = useWindowDimensions();
 
-  const [view, setView] = useState('graph');
   const [saveOpen, setSaveOpen] = useState(false);
   const [reportName, setReportName] = useState('');
 
   const isFit = outputs.status === 'FIT';
 
-  const curve = useMemo(
-    () => buildAUWvsAltitudeCurve(aircraft, formulas),
-    [aircraft, formulas]
-  );
+  const vmaxCurves = useMemo(() => buildPerformanceCurves(aircraft, 'vmax'), [aircraft]);
+  const rocCurves  = useMemo(() => buildPerformanceCurves(aircraft, 'roc'),  [aircraft]);
 
-  const currentPoint = useMemo(
-    () => ({ x: Math.max(0, Math.min(20, outputs.PA / 1000)), y: outputs.AUW }),
-    [outputs]
+  const vmaxPoint = useMemo(
+    () => computeCurrentPerfPoint(aircraft, outputs.DENSITY_ALT, outputs.AUW, 'vmax'),
+    [aircraft, outputs.DENSITY_ALT, outputs.AUW],
+  );
+  const rocPoint = useMemo(
+    () => computeCurrentPerfPoint(aircraft, outputs.DENSITY_ALT, outputs.AUW, 'roc'),
+    [aircraft, outputs.DENSITY_ALT, outputs.AUW],
+  );
+  const isaPoint = useMemo(
+    () => ({ oat: Number(inputs.temperature), pa: outputs.PA, da: outputs.DENSITY_ALT }),
+    [inputs.temperature, outputs.PA, outputs.DENSITY_ALT],
   );
 
   const openSave = async () => {
@@ -164,45 +170,22 @@ export default function Results() {
           />
         </View>
 
-        {/* Graph / Table toggle */}
-        <View style={styles.toggleRow}>
-          <TouchableOpacity
-            style={[styles.toggleBtn, view === 'graph' && styles.toggleBtnActive]}
-            onPress={() => setView('graph')}
-            testID="toggle-graph"
-          >
-            <BarChart3 size={16} color={view === 'graph' ? '#fff' : COLORS.text} />
-            <Text style={[styles.toggleText, view === 'graph' && { color: '#fff' }]}>Graph</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleBtn, view === 'table' && styles.toggleBtnActive]}
-            onPress={() => setView('table')}
-            testID="toggle-table"
-          >
-            <TableProperties size={16} color={view === 'table' ? '#fff' : COLORS.text} />
-            <Text style={[styles.toggleText, view === 'table' && { color: '#fff' }]}>Table</Text>
-          </TouchableOpacity>
+        {/* Chart 1 — Max Speed in Level Flight (all aircraft) */}
+        <View style={styles.chartCard}>
+          <Text style={styles.chartTitle}>MAX SPEED IN LEVEL FLIGHT</Text>
+          <PerformanceChart type="vmax" curves={vmaxCurves} current={vmaxPoint} width={chartWidth} height={240} />
         </View>
 
-        {/* Chart / Table */}
+        {/* Chart 2 — Rate of Climb (all aircraft) */}
         <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>AUW VS ALTITUDE</Text>
-          {view === 'graph' ? (
-            <AUWChart width={chartWidth} height={220} points={curve} current={currentPoint} />
-          ) : (
-            <View style={{ marginTop: 8 }}>
-              <View style={styles.tblHeader}>
-                <Text style={styles.tblHeadCell}>Alt (kft)</Text>
-                <Text style={styles.tblHeadCell}>Max AUW (kg)</Text>
-              </View>
-              {curve.filter((_, i) => i % 2 === 0).map((p) => (
-                <View key={p.x} style={styles.tblRow}>
-                  <Text style={styles.tblCell}>{p.x}</Text>
-                  <Text style={styles.tblCell}>{p.y}</Text>
-                </View>
-              ))}
-            </View>
-          )}
+          <Text style={styles.chartTitle}>RATE OF CLIMB</Text>
+          <PerformanceChart type="roc" curves={rocCurves} current={rocPoint} width={chartWidth} height={240} />
+        </View>
+
+        {/* Chart 3 — Pressure Altitude vs Density Altitude (ISA conversion) */}
+        <View style={styles.chartCard}>
+          <Text style={styles.chartTitle}>PRESSURE ALT vs DENSITY ALT</Text>
+          <ISAChart current={isaPoint} width={chartWidth} height={240} />
         </View>
 
         {/* Detail grid — all 8 outputs */}
@@ -358,16 +341,6 @@ const styles = StyleSheet.create({
   metricLabel: { color: COLORS.textMuted, fontSize: 12, fontWeight: '700' },
   metricValue: { fontSize: 26, fontWeight: '900' },
   metricUnit: { color: COLORS.textMuted, fontWeight: '700' },
-  toggleRow: {
-    flexDirection: 'row', backgroundColor: COLORS.card, borderRadius: RADIUS.md,
-    padding: 4, marginTop: SPACING.md, ...SHADOW,
-  },
-  toggleBtn: {
-    flex: 1, paddingVertical: 10, flexDirection: 'row', justifyContent: 'center',
-    alignItems: 'center', gap: 6, borderRadius: RADIUS.sm,
-  },
-  toggleBtnActive: { backgroundColor: COLORS.dark },
-  toggleText: { fontWeight: '800', color: COLORS.text },
   chartCard: {
     backgroundColor: COLORS.card, borderRadius: RADIUS.md, padding: SPACING.md,
     marginTop: SPACING.sm, ...SHADOW,
@@ -376,10 +349,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted, fontSize: 11, letterSpacing: 1.4,
     textTransform: 'uppercase', fontWeight: '800', marginBottom: SPACING.sm,
   },
-  tblHeader: { flexDirection: 'row', paddingVertical: 6, borderBottomWidth: 1, borderColor: COLORS.border },
-  tblHeadCell: { flex: 1, fontWeight: '900', color: COLORS.text },
-  tblRow: { flexDirection: 'row', paddingVertical: 8, borderBottomWidth: 1, borderColor: COLORS.border },
-  tblCell: { flex: 1, color: COLORS.text },
   sectionTitle: { fontSize: 18, fontWeight: '900', color: COLORS.text },
   detailGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginTop: SPACING.sm },
   detailCell: {
