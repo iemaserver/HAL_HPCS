@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "HAL Helicopter Performance",
+    "slug": "hal-hpcs",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "hal-hpcs",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -16,7 +16,11 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": false,
+      "navigationBar": {
+        "backgroundColor": "#0F172A",
+        "barStyle": "light-content"
+      }
     },
     "web": {
       "bundler": "metro",
@@ -32,6 +36,13 @@
           "imageWidth": 220,
           "resizeMode": "contain",
           "backgroundColor": "#EAF6FF"
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow HAL Helicopter Performance to use the microphone for voice input.",
+          "speechRecognitionPermission": "Allow HAL Helicopter Performance to use speech recognition for voice input."
         }
       ]
     ],

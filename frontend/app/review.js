@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import {
@@ -34,6 +34,7 @@ export default function Review() {
   const {
     aircraftDefaults, selectedAircraftId, setSelectedAircraftId, inputs, units, outputs,
   } = useAppState();
+  const insets = useSafeAreaInsets();
 
   const editField = (step) => router.push({ pathname: '/wizard', params: { step } });
 
@@ -47,7 +48,7 @@ export default function Review() {
   };
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']} testID="review-screen">
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="review-screen">
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} testID="back-btn">
           <ChevronLeft size={22} color="#fff" />
@@ -127,7 +128,7 @@ export default function Review() {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: SPACING.lg + insets.bottom }]}>
         <TouchableOpacity style={styles.computeBtn} onPress={compute} testID="compute-performance-btn" activeOpacity={0.9}>
           <Text style={styles.computeText}>Compute Performance</Text>
         </TouchableOpacity>

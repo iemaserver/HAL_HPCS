@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Platform, KeyboardAvoidingView, Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import { ChevronLeft, RotateCcw, Save as SaveIcon } from 'lucide-react-native';
@@ -23,6 +23,7 @@ export default function Settings() {
   const {
     aircraftDefaults, formulas, updateAircraftDefaults, updateFormulas,
   } = useAppState();
+  const insets = useSafeAreaInsets();
 
   const [localAC, setLocalAC] = useState(aircraftDefaults);
   const [localF, setLocalF] = useState(formulas);
@@ -84,7 +85,7 @@ export default function Settings() {
   };
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']} testID="settings-screen">
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="settings-screen">
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} testID="back-btn">
           <ChevronLeft size={22} color="#fff" />
@@ -150,7 +151,7 @@ export default function Settings() {
           })}
         </ScrollView>
 
-        <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: SPACING.lg + insets.bottom }]}>
           <TouchableOpacity style={styles.saveBtn} onPress={save} testID="settings-save-btn">
             <SaveIcon size={18} color="#fff" />
             <Text style={styles.saveText}>Save Configuration</Text>

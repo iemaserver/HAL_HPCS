@@ -8,7 +8,7 @@ import { AppStateProvider } from '../src/store/AppState';
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#0F172A' }}>
       <SafeAreaProvider>
         <AppStateProvider>
           <StatusBar style="light" />

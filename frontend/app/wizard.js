@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Platform, KeyboardAvoidingView, TextInput,
 } from 'react-native';
@@ -7,6 +7,11 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   ChevronLeft, ChevronRight, Mountain, Thermometer, Fuel, Package, User, Gauge, Weight, Mic,
 } from 'lucide-react-native';
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+  nativeSpeechAvailable,
+} from '../src/utils/speech';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/theme/theme';
 import { useAppState } from '../src/store/AppState';
 import { fromBaseUnit, toBaseUnit, WIZARD_FIELDS } from '../src/config/logic';
@@ -37,6 +42,21 @@ export default function Wizard() {
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
   const [listening, setListening] = useState(false);
+  const webRecRef = useRef(null);
+
+  // Native speech recognition events (expo-speech-recognition)
+  useSpeechRecognitionEvent('start', () => setListening(true));
+  useSpeechRecognitionEvent('end', () => setListening(false));
+  useSpeechRecognitionEvent('error', (e) => {
+    setListening(false);
+    setError(e.message || 'Voice recognition error');
+  });
+  useSpeechRecognitionEvent('result', (e) => {
+    const transcript = e.results?.[0]?.transcript ?? '';
+    const m = transcript.match(/-?\d+(\.\d+)?/);
+    if (m) { setValue(m[0]); setError(''); }
+    else { setError(`Could not parse a number from: "${transcript}"`); }
+  });
 
   const field = WIZARD_FIELDS[step];
   const Icon = ICONS[field.key];
@@ -89,11 +109,14 @@ export default function Wizard() {
     setStep((s) => s - 1);
   };
 
-  const startVoice = () => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const startVoice = async () => {
+    if (Platform.OS === 'web') {
+      // Web: use browser SpeechRecognition API
+      const SR = (typeof window !== 'undefined') && (window.SpeechRecognition || window.webkitSpeechRecognition);
       if (!SR) { setError('Voice recognition not available on this browser.'); return; }
+      if (webRecRef.current) { try { webRecRef.current.abort(); } catch (_) {} }
       const rec = new SR();
+      webRecRef.current = rec;
       rec.lang = 'en-US';
       rec.continuous = false;
       rec.interimResults = false;
@@ -101,18 +124,29 @@ export default function Wizard() {
       rec.onend = () => setListening(false);
       rec.onerror = (e) => { setListening(false); setError(e.error || 'Voice error'); };
       rec.onresult = (e) => {
-        const result = e.results[0][0].transcript;
-        const m = result.match(/-?\d+(\.\d+)?/);
+        const transcript = e.results[0][0].transcript;
+        const m = transcript.match(/-?\d+(\.\d+)?/);
         if (m) { setValue(m[0]); setError(''); }
+        else { setError(`Could not parse a number from: "${transcript}"`); }
       };
       try { rec.start(); } catch (err) { setError(String(err)); }
     } else {
-      setError('Offline voice requires a dev build with expo-speech-recognition. Please use the keypad.');
+      // Native: use expo-speech-recognition
+      if (!nativeSpeechAvailable) {
+        setError('Voice input requires a dev build. Please use the keypad.');
+        return;
+      }
+      const { status } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (status !== 'granted') {
+        setError('Microphone permission denied. Please allow it in device settings.');
+        return;
+      }
+      ExpoSpeechRecognitionModule.start({ lang: 'en-US', continuous: false, interimResults: false });
     }
   };
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']} testID="wizard-screen">
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="wizard-screen">
       <View style={styles.header}>
         <Text style={styles.headerTitle}>{editMode ? `Edit ${field.label}` : 'Operational Inputs'}</Text>
         {!editMode && <Text style={styles.headerStep}>{step + 1} / {WIZARD_FIELDS.length}</Text>}

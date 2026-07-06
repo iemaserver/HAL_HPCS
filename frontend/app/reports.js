@@ -47,7 +47,7 @@ export default function Reports() {
   };
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']} testID="reports-screen">
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="reports-screen">
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} testID="back-btn">
           <ChevronLeft size={22} color="#fff" />

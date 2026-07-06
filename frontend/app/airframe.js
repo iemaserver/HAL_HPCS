@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { ChevronRight, FolderClock, Settings as SettingsIcon } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/theme/theme';
@@ -17,9 +17,10 @@ const AIRFRAMES = ['chetak', 'cheetah', 'cheetal'];
 export default function Airframe() {
   const router = useRouter();
   const { aircraftDefaults, selectedAircraftId, setSelectedAircraftId } = useAppState();
+  const insets = useSafeAreaInsets();
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']} testID="airframe-screen">
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="airframe-screen">
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Helicopter Performance System</Text>
         <View style={styles.headerActions}>
@@ -62,7 +63,7 @@ export default function Airframe() {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: SPACING.lg + insets.bottom }]}>
         <TouchableOpacity
           style={styles.nextBtn}
           onPress={() => router.push('/wizard')}

@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, TextInput, Alert, useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import {
@@ -19,6 +19,7 @@ import { generateAndSharePdf } from '../src/utils/pdf';
 export default function Results() {
   const router = useRouter();
   const { aircraftDefaults, selectedAircraftId, inputs, outputs, formulas, units, resetInputsToDefaults } = useAppState();
+  const insets = useSafeAreaInsets();
   const aircraft = aircraftDefaults[selectedAircraftId];
   const { width } = useWindowDimensions();
 
@@ -98,7 +99,7 @@ export default function Results() {
   const chartWidth = Math.min(width - SPACING.xl * 2, 420);
 
   return (
-    <SafeAreaView style={styles.root} edges={['top']} testID="results-screen">
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="results-screen">
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} testID="back-btn">
           <ChevronLeft size={22} color="#fff" />
@@ -109,7 +110,7 @@ export default function Results() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 140 }}>
+      <ScrollView contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 140 + insets.bottom }}>
         {/* Summary strip */}
         <View style={styles.summaryStrip}>
           <SumCell label="Aircraft" value={aircraft.name} testID="sum-aircraft" />
@@ -230,7 +231,7 @@ export default function Results() {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: SPACING.md + insets.bottom }]}>
         <TouchableOpacity
           style={[styles.footBtn, { backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.border }]}
           onPress={() => { resetInputsToDefaults(); router.replace('/airframe'); }}
