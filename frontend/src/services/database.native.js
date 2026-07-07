@@ -1,59 +1,85 @@
 /**
- * Native (iOS/Android) offline storage using expo-file-system JSON files.
- * Same public API as database.web.js.
+ * Native (iOS/Android) offline storage — expo-file-system/next class API.
+ * Directory is instantiated lazily (never at module scope) so an import-time
+ * constructor mismatch cannot crash the router on startup.
+ * Falls back to in-memory storage transparently if the native layer fails.
  */
-import * as FileSystem from 'expo-file-system';
 import { DEFAULT_AIRCRAFT, DEFAULT_FORMULAS } from '../constants/logic';
 
-const DATA_DIR = FileSystem.documentDirectory + 'hal_data/';
-const REPORTS_FILE = DATA_DIR + 'reports.json';
-const CONFIG_FILE = DATA_DIR + 'config.json';
-const DEVICE_FILE = DATA_DIR + 'device_id.txt';
+// ── in-memory fallback (used when file-system is unavailable) ─────────────
+let _mem = { reports: [], config: {}, deviceId: null };
 
-// intermediates:true makes this a no-op if the directory already exists.
-const ensureDir = () =>
-  FileSystem.makeDirectoryAsync(DATA_DIR, { intermediates: true }).catch(() => {});
+// ── lazy file-system helpers ──────────────────────────────────────────────
+let _fsReady = null; // null = untested, true/false = result
 
-const readJson = async (path, fallback) => {
+const getFS = async () => {
+  if (_fsReady === false) return null;
   try {
-    const raw = await FileSystem.readAsStringAsync(path);
-    return JSON.parse(raw);
+    const { File, Directory } = await import('expo-file-system/next');
+    const { documentDirectory } = await import('expo-file-system');
+    const DATA_URI = documentDirectory + 'hal_data/';
+    const dir = new Directory(DATA_URI);
+    if (!dir.exists) dir.create();
+    _fsReady = true;
+    return { File, DATA_URI };
+  } catch {
+    _fsReady = false;
+    return null;
+  }
+};
+
+const readJson = async (filename, fallback) => {
+  const fs = await getFS();
+  if (!fs) return fallback;
+  try {
+    const file = new fs.File(fs.DATA_URI + filename);
+    if (!file.exists) return fallback;
+    return JSON.parse(file.text());
   } catch {
     return fallback;
   }
 };
 
-const writeJson = async (path, data) => {
-  await ensureDir();
-  await FileSystem.writeAsStringAsync(path, JSON.stringify(data));
+const writeJson = async (filename, data) => {
+  const fs = await getFS();
+  if (!fs) return;
+  try {
+    new fs.File(fs.DATA_URI + filename).write(JSON.stringify(data));
+  } catch { /* ignore */ }
 };
 
+// ── public API ────────────────────────────────────────────────────────────
 export const insertReport = async (r) => {
-  const reports = await readJson(REPORTS_FILE, []);
+  const reports = await readJson('reports.json', _mem.reports);
   const idx = reports.findIndex((x) => x.id === r.id);
   if (idx >= 0) reports[idx] = r; else reports.unshift(r);
-  await writeJson(REPORTS_FILE, reports);
+  _mem.reports = reports;
+  await writeJson('reports.json', reports);
 };
 
 export const listReports = async () => {
-  const reports = await readJson(REPORTS_FILE, []);
+  const reports = await readJson('reports.json', _mem.reports);
+  _mem.reports = reports;
   return [...reports].sort((a, b) => b.created_at.localeCompare(a.created_at));
 };
 
 export const deleteReport = async (id) => {
-  const reports = await readJson(REPORTS_FILE, []);
-  await writeJson(REPORTS_FILE, reports.filter((r) => r.id !== id));
+  const reports = (await readJson('reports.json', _mem.reports)).filter((r) => r.id !== id);
+  _mem.reports = reports;
+  await writeJson('reports.json', reports);
 };
 
 const readConfig = async (key) => {
-  const config = await readJson(CONFIG_FILE, {});
+  const config = await readJson('config.json', _mem.config);
+  _mem.config = config;
   return config[key] ?? null;
 };
 
 const writeConfig = async (key, value) => {
-  const config = await readJson(CONFIG_FILE, {});
+  const config = await readJson('config.json', _mem.config);
   config[key] = value;
-  await writeJson(CONFIG_FILE, config);
+  _mem.config = config;
+  await writeJson('config.json', config);
 };
 
 export const loadAircraftDefaults = async () => {
@@ -77,16 +103,24 @@ export const saveFormulas = async (f) => {
 };
 
 export const resetConfig = async () => {
-  await writeJson(CONFIG_FILE, {});
+  _mem.config = {};
+  await writeJson('config.json', {});
 };
 
 export const getDeviceId = async () => {
-  try {
-    const id = await FileSystem.readAsStringAsync(DEVICE_FILE);
-    if (id && id.trim()) return id.trim();
-  } catch { /* file doesn't exist yet */ }
+  if (_mem.deviceId) return _mem.deviceId;
+  const fs = await getFS();
+  if (fs) {
+    try {
+      const file = new fs.File(fs.DATA_URI + 'device_id.txt');
+      if (file.exists) {
+        const id = file.text();
+        if (id && id.trim()) { _mem.deviceId = id.trim(); return _mem.deviceId; }
+      }
+    } catch { /* ignore */ }
+  }
   const id = `HAL${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-  await ensureDir();
-  await FileSystem.writeAsStringAsync(DEVICE_FILE, id);
+  _mem.deviceId = id;
+  if (fs) { try { new fs.File(fs.DATA_URI + 'device_id.txt').write(id); } catch { /* ignore */ } }
   return id;
 };
