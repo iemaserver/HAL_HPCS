@@ -103,6 +103,23 @@ export default function Reports() {
           );
         })}
       </ScrollView>
+
+      <Modal visible={confirmId !== null} animationType="fade" transparent onRequestClose={() => setConfirmId(null)}>
+        <View style={styles.modalBack}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Delete Report?</Text>
+            <Text style={styles.modalSub}>This report will be permanently removed.</Text>
+            <View style={{ flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg }}>
+              <TouchableOpacity style={[styles.btn, styles.btnGhost]} onPress={() => setConfirmId(null)}>
+                <Text style={styles.btnGhostText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.btn, { backgroundColor: COLORS.error }]} onPress={() => performDelete(confirmId)}>
+                <Text style={[styles.btnPrimaryText]}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

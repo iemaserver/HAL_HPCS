@@ -26,6 +26,7 @@ export const AppStateProvider = ({ children }) => {
     altitude: 'ft',
     temperature: 'C',
     weight: 'kg',
+    fuel: 'L',
     pressure: 'hPa',
   });
   const [inputs, setInputsState] = useState({

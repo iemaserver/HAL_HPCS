@@ -91,6 +91,7 @@ export const toBaseUnit = (value, unit) => {
     case 'F': return CONVERSIONS.F_to_C(value);
     case 'kg': return value;
     case 'lb': return value * CONVERSIONS.lb_to_kg;
+    case 'L': return value * 0.8; // Avtur/Jet-A density ≈ 0.800 kg/L
     case 'hPa': return value;
     case 'inHg': return value * CONVERSIONS.inHg_to_hPa;
     default: return value;
@@ -105,6 +106,7 @@ export const fromBaseUnit = (value, unit) => {
     case 'F': return CONVERSIONS.C_to_F(value);
     case 'kg': return value;
     case 'lb': return value * CONVERSIONS.kg_to_lb;
+    case 'L': return value / 0.8; // Avtur/Jet-A density ≈ 0.800 kg/L
     case 'hPa': return value;
     case 'inHg': return value * CONVERSIONS.hPa_to_inHg;
     default: return value;
@@ -159,7 +161,7 @@ export const WIZARD_FIELDS = [
   { key: 'temperature', label: 'Temperature', unitKey: 'temperature', unitOptions: ['C', 'F'], min: -20, max: 50 },
   { key: 'acWeight', label: 'Aircraft Weight', unitKey: 'weight', unitOptions: ['kg', 'lb'], min: 500, max: 3000 },
   { key: 'crewWeight', label: 'Crew Weight', unitKey: 'weight', unitOptions: ['kg', 'lb'], min: 0, max: 500 },
-  { key: 'fuel', label: 'Fuel Onboard', unitKey: 'weight', unitOptions: ['kg', 'lb'], min: 0, max: 500 },
+  { key: 'fuel', label: 'Fuel Onboard', unitKey: 'fuel', unitOptions: ['L', 'kg', 'lb'], min: 0, max: 500 },
   { key: 'additionalLoad', label: 'Additional Load', unitKey: 'weight', unitOptions: ['kg', 'lb'], min: 0, max: 500 },
   { key: 'payload', label: 'Load', unitKey: 'weight', unitOptions: ['kg', 'lb'], min: 0, max: 800 },
 ];

@@ -1,110 +1,92 @@
 /**
- * Native (iOS/Android) offline DB layer backed by expo-sqlite.
+ * Native (iOS/Android) offline storage using expo-file-system JSON files.
  * Same public API as database.web.js.
  */
-import * as SQLite from 'expo-sqlite';
+import * as FileSystem from 'expo-file-system';
 import { DEFAULT_AIRCRAFT, DEFAULT_FORMULAS } from '../constants/logic';
 
-// Cache the in-flight open+init PROMISE (not just the resolved db) so
-// concurrent callers (e.g. Promise.all([loadAircraftDefaults(), loadFormulas()])
-// on app boot) await the same connection instead of racing to open the
-// database file twice, which crashes with a native NullPointerException.
-let _dbPromise = null;
-const getDB = () => {
-  if (!_dbPromise) {
-    _dbPromise = (async () => {
-      const db = await SQLite.openDatabaseAsync('hal_performance.db');
-      await db.execAsync(`
-        CREATE TABLE IF NOT EXISTS reports (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          created_at TEXT NOT NULL,
-          aircraft_id TEXT NOT NULL,
-          payload_json TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS config (
-          key TEXT PRIMARY KEY,
-          value TEXT NOT NULL
-        );
-      `);
-      return db;
-    })();
+const DATA_DIR = FileSystem.documentDirectory + 'hal_data/';
+const REPORTS_FILE = DATA_DIR + 'reports.json';
+const CONFIG_FILE = DATA_DIR + 'config.json';
+const DEVICE_FILE = DATA_DIR + 'device_id.txt';
+
+// intermediates:true makes this a no-op if the directory already exists.
+const ensureDir = () =>
+  FileSystem.makeDirectoryAsync(DATA_DIR, { intermediates: true }).catch(() => {});
+
+const readJson = async (path, fallback) => {
+  try {
+    const raw = await FileSystem.readAsStringAsync(path);
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
   }
-  return _dbPromise;
 };
 
-const CFG_AIRCRAFT = 'aircraft_defaults';
-const CFG_FORMULAS = 'formulas';
-const DEVICE_ID_KEY = 'hal_device_id';
+const writeJson = async (path, data) => {
+  await ensureDir();
+  await FileSystem.writeAsStringAsync(path, JSON.stringify(data));
+};
 
 export const insertReport = async (r) => {
-  const db = await getDB();
-  await db.runAsync(
-    `INSERT OR REPLACE INTO reports (id, name, created_at, aircraft_id, payload_json) VALUES (?, ?, ?, ?, ?)`,
-    [r.id, r.name, r.created_at, r.aircraft_id, JSON.stringify(r.payload)]
-  );
+  const reports = await readJson(REPORTS_FILE, []);
+  const idx = reports.findIndex((x) => x.id === r.id);
+  if (idx >= 0) reports[idx] = r; else reports.unshift(r);
+  await writeJson(REPORTS_FILE, reports);
 };
 
 export const listReports = async () => {
-  const db = await getDB();
-  const rows = await db.getAllAsync(
-    `SELECT id, name, created_at, aircraft_id, payload_json FROM reports ORDER BY created_at DESC`
-  );
-  return rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    created_at: r.created_at,
-    aircraft_id: r.aircraft_id,
-    payload: JSON.parse(r.payload_json),
-  }));
+  const reports = await readJson(REPORTS_FILE, []);
+  return [...reports].sort((a, b) => b.created_at.localeCompare(a.created_at));
 };
 
 export const deleteReport = async (id) => {
-  const db = await getDB();
-  await db.runAsync(`DELETE FROM reports WHERE id = ?`, [id]);
+  const reports = await readJson(REPORTS_FILE, []);
+  await writeJson(REPORTS_FILE, reports.filter((r) => r.id !== id));
 };
 
 const readConfig = async (key) => {
-  const db = await getDB();
-  const row = await db.getFirstAsync(`SELECT value FROM config WHERE key = ?`, [key]);
-  return row && row.value ? row.value : null;
+  const config = await readJson(CONFIG_FILE, {});
+  return config[key] ?? null;
 };
 
 const writeConfig = async (key, value) => {
-  const db = await getDB();
-  await db.runAsync(`INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)`, [key, value]);
+  const config = await readJson(CONFIG_FILE, {});
+  config[key] = value;
+  await writeJson(CONFIG_FILE, config);
 };
 
 export const loadAircraftDefaults = async () => {
-  const raw = await readConfig(CFG_AIRCRAFT);
+  const raw = await readConfig('aircraft_defaults');
   if (raw) { try { return JSON.parse(raw); } catch { /* ignore */ } }
   return DEFAULT_AIRCRAFT;
 };
 
 export const saveAircraftDefaults = async (d) => {
-  await writeConfig(CFG_AIRCRAFT, JSON.stringify(d));
+  await writeConfig('aircraft_defaults', JSON.stringify(d));
 };
 
 export const loadFormulas = async () => {
-  const raw = await readConfig(CFG_FORMULAS);
+  const raw = await readConfig('formulas');
   if (raw) { try { return { ...DEFAULT_FORMULAS, ...JSON.parse(raw) }; } catch { /* ignore */ } }
   return DEFAULT_FORMULAS;
 };
 
 export const saveFormulas = async (f) => {
-  await writeConfig(CFG_FORMULAS, JSON.stringify(f));
+  await writeConfig('formulas', JSON.stringify(f));
 };
 
 export const resetConfig = async () => {
-  const db = await getDB();
-  await db.runAsync(`DELETE FROM config WHERE key IN (?, ?)`, [CFG_AIRCRAFT, CFG_FORMULAS]);
+  await writeJson(CONFIG_FILE, {});
 };
 
 export const getDeviceId = async () => {
-  let id = await readConfig(DEVICE_ID_KEY);
-  if (!id) {
-    id = `HAL${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    await writeConfig(DEVICE_ID_KEY, id);
-  }
+  try {
+    const id = await FileSystem.readAsStringAsync(DEVICE_FILE);
+    if (id && id.trim()) return id.trim();
+  } catch { /* file doesn't exist yet */ }
+  const id = `HAL${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  await ensureDir();
+  await FileSystem.writeAsStringAsync(DEVICE_FILE, id);
   return id;
 };
