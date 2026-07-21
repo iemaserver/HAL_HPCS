@@ -8,9 +8,9 @@ import { useAppState } from '../src/store/AppState';
 import AppMenu from '../src/components/AppMenu';
 
 const HELI_IMG = {
-  chetak: 'https://images.unsplash.com/photo-1528474078150-7324b0375b1c?crop=entropy&cs=srgb&fm=jpg&w=400&q=80',
-  cheetah: 'https://images.unsplash.com/photo-1759610314761-855c55114110?crop=entropy&cs=srgb&fm=jpg&w=400&q=80',
-  cheetal: 'https://images.pexels.com/photos/5620366/pexels-photo-5620366.jpeg?auto=compress&cs=tinysrgb&w=400',
+  chetak:  require('../assets/images/Chetak-1.png'),
+  cheetah: require('../assets/images/Cheetah-1.png'),
+  cheetal: require('../assets/images/Cheetal-1.png'),
 };
 
 const AIRFRAMES = ['chetak', 'cheetah', 'cheetal'];
@@ -46,7 +46,7 @@ export default function Airframe() {
                 activeOpacity={0.85}
                 testID={`airframe-${id}`}
               >
-                <Image source={{ uri: HELI_IMG[id] }} style={styles.img} resizeMode="cover" />
+                <Image source={HELI_IMG[id]} style={styles.img} resizeMode="cover" />
                 <Text style={[styles.name, active && { color: COLORS.primaryDark }]}>
                   {aircraftDefaults[id].name}
                 </Text>
