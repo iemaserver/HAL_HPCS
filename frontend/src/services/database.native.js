@@ -102,6 +102,16 @@ export const saveFormulas = async (f) => {
   await writeConfig('formulas', JSON.stringify(f));
 };
 
+export const loadSession = async () => {
+  const raw = await readConfig('session');
+  if (raw) { try { return JSON.parse(raw); } catch { /* ignore */ } }
+  return null;
+};
+
+export const saveSession = async (s) => {
+  await writeConfig('session', JSON.stringify(s));
+};
+
 export const resetConfig = async () => {
   _mem.config = {};
   await writeJson('config.json', {});

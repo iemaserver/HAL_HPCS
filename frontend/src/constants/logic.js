@@ -26,6 +26,9 @@ export const DEFAULT_AIRCRAFT = {
     defaultElevation: 0,
     defaultQNH: 1013.25,
     defaultTemp: 15,
+    jptBase: 600,   // °C at sea level ISA, low-power
+    jptRange: 200,  // °C added from idle to rated power
+    jptMax: 870,    // °C max continuous (Artouste IIIB)
     // Performance chart config — ref: CHETAK GRAPH + COMMON GRAPHS (SA316B)
     vmaxFactor: 1222, // ~108 kts at 1450 kg, sea level
     rocBase: 2700,   // ~600 ft/min at MAUW, sea level (SA316B ROC chart)
@@ -45,6 +48,9 @@ export const DEFAULT_AIRCRAFT = {
     defaultElevation: 0,
     defaultQNH: 1013.25,
     defaultTemp: 15,
+    jptBase: 600,
+    jptRange: 200,
+    jptMax: 870,
     // Performance chart config — ref: CHEETAH GRAPH (Lama)
     vmaxFactor: 1221, // same Lama calibration as CHETAK GRAPH left (~108 kts at 1450 kg)
     rocBase: 3500,
@@ -64,6 +70,9 @@ export const DEFAULT_AIRCRAFT = {
     defaultElevation: 0,
     defaultQNH: 1013.25,
     defaultTemp: 15,
+    jptBase: 620,
+    jptRange: 230,
+    jptMax: 900,   // °C max continuous (TM333-2M2)
     // Performance chart config — higher-power (847 shp vs 550 shp on Cheetah)
     vmaxFactor: 1265, // slightly higher speed envelope from more power
     rocBase: 5000,
@@ -136,6 +145,8 @@ export const DEFAULT_FORMULAS = {
   POWER_AVAIL: 'rated_power * Math.max(0.55, 1 - (density_alt / 30000))',
   // Power Required (shp) - scales with AUW & density altitude
   POWER_REQ: 'baseline_power_req * (auw / mauw) * (1 + (density_alt / 40000))',
+  // Jet Pipe Temperature (°C) - rises with power loading, OAT above ISA, and density altitude
+  JPT: 'jpt_base + (power_req / rated_power) * jpt_range + ab_temp * 1.5 + density_alt / 2000',
 };
 
 export const FORMULA_META = [
@@ -147,6 +158,7 @@ export const FORMULA_META = [
   { key: 'AUW', label: 'All Up Weight (kg)', vars: 'ac_weight, crew, fuel, payload, add_load' },
   { key: 'POWER_AVAIL', label: 'Power Available (shp)', vars: 'rated_power, density_alt' },
   { key: 'POWER_REQ', label: 'Power Required (shp)', vars: 'baseline_power_req, auw, mauw, density_alt' },
+  { key: 'JPT', label: 'Jet Pipe Temperature (°C)', vars: 'power_req, rated_power, jpt_base, jpt_range, ab_temp, density_alt' },
 ];
 
 /* ---------------- WIZARD FIELDS (Operational Inputs step order + limits) ---------------- */
@@ -225,6 +237,15 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     Math.min(Math.max(AUW_MARGIN, 0), AUW * powerHeadroomFactor)
   );
 
+  const JPT = safeEval(formulas.JPT, {
+    ...baseCtx,
+    power_req: POWER_REQ,
+    ab_temp: AB_TEMP,
+    density_alt: DENSITY_ALT,
+    jpt_base: aircraft.jptBase ?? 600,
+    jpt_range: aircraft.jptRange ?? 200,
+  });
+
   // Fit to Fly checks (0.01 precision)
   const reasons = [];
   if (AUW - aircraft.mauw > 0.01) {
@@ -239,6 +260,9 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
   if (AB_TEMP > 35) {
     reasons.push(`Temperature +${AB_TEMP.toFixed(1)}°C above ISA exceeds limit`);
   }
+  if (JPT > (aircraft.jptMax ?? 870)) {
+    reasons.push(`JPT ${JPT.toFixed(0)}°C exceeds limit ${aircraft.jptMax ?? 870}°C`);
+  }
 
   return {
     PA: round(PA),
@@ -252,6 +276,7 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     POWER_BALANCE_PCT,
     AUW_MARGIN: round(AUW_MARGIN),
     PAYLOAD_MARGIN,
+    JPT: round(JPT),
     status: reasons.length === 0 ? 'FIT' : 'NOT_FIT',
     reasons,
   };

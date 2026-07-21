@@ -13,6 +13,8 @@ import {
   loadFormulas,
   saveAircraftDefaults,
   saveFormulas,
+  loadSession,
+  saveSession,
 } from '../services/database';
 
 const Ctx = createContext(null);
@@ -43,10 +45,18 @@ export const AppStateProvider = ({ children }) => {
   useEffect(() => {
     (async () => {
       try {
-        const [ad, f] = await Promise.all([loadAircraftDefaults(), loadFormulas()]);
+        const [ad, f, session] = await Promise.all([
+          loadAircraftDefaults(),
+          loadFormulas(),
+          loadSession(),
+        ]);
         setAircraftDefaults(ad);
         setFormulas(f);
-        // Do NOT auto-fill input fields — user explicitly wants blank inputs.
+        if (session) {
+          if (session.selectedAircraftId) setSelectedAircraftId(session.selectedAircraftId);
+          if (session.units) setUnits((prev) => ({ ...prev, ...session.units }));
+          if (session.inputs) setInputsState((prev) => ({ ...prev, ...session.inputs }));
+        }
       } catch (e) {
         console.warn('DB load failed, using defaults', e);
       } finally {
@@ -56,11 +66,11 @@ export const AppStateProvider = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // When the aircraft changes, keep inputs blank (user enters everything).
+  // Persist session whenever aircraft, inputs, or units change.
   useEffect(() => {
     if (!ready) return;
-    // intentionally no auto-fill
-  }, [selectedAircraftId, ready]);
+    saveSession({ selectedAircraftId, inputs, units }).catch(() => {});
+  }, [ready, selectedAircraftId, inputs, units]);
 
   const setInputs = (v) => setInputsState((prev) => ({ ...prev, ...v }));
 

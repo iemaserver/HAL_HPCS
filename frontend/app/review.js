@@ -50,7 +50,7 @@ export default function Review() {
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="review-screen">
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} testID="back-btn">
+        <TouchableOpacity onPress={() => router.push('/calculator')} style={styles.headerBtn} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} testID="back-btn">
           <ChevronLeft size={22} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Review Details</Text>

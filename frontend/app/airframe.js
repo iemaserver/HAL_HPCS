@@ -66,7 +66,7 @@ export default function Airframe() {
       <View style={[styles.footer, { paddingBottom: SPACING.lg + insets.bottom }]}>
         <TouchableOpacity
           style={styles.nextBtn}
-          onPress={() => router.push('/wizard')}
+          onPress={() => router.push('/calculator')}
           testID="airframe-next-btn"
           activeOpacity={0.9}
         >
