@@ -17,7 +17,6 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
       },
-      "edgeToEdgeEnabled": false,
       "navigationBar": {
         "backgroundColor": "#0F172A",
         "barStyle": "light-content"
@@ -33,9 +32,9 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/logos/Flash-screen.png",
-          "imageWidth": 430,
-          "resizeMode": "cover",
+          "image": "./assets/logos/hal-logo.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
           "backgroundColor": "#B8E4F5"
         }
       ],
