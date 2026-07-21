@@ -224,8 +224,6 @@ export default function Calculator() {
     }
   };
 
-  const pb = outputs.POWER_BALANCE_PCT ?? 0;
-
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       {/* Header */}
@@ -286,16 +284,15 @@ export default function Calculator() {
           <OutRow label="Pressure Altitude"  value={outputs.PA}           unit="ft"    />
           <OutRow label="ISA Temperature"    value={outputs.ISA_TEMP}      unit="°C"    />
           <OutRow label="Density Altitude"   value={outputs.DENSITY_ALT}   unit="ft"    warn={outputs.DENSITY_ALT > 18000} />
-          <OutRow label="Air Density"        value={outputs.DENSITY}        unit="kg/m³" />
           <OutRow label="All Up Weight"      value={outputs.AUW}            unit="kg"    warn={outputs.AUW > aircraft.mauw} />
           <OutRow label="AUW Margin"         value={outputs.AUW_MARGIN}     unit="kg"    warn={outputs.AUW_MARGIN < 0} good={outputs.AUW_MARGIN >= 0} />
-          <OutRow label="Power Available"    value={outputs.POWER_AVAIL}    unit="shp"   />
-          <OutRow label="Power Required"     value={outputs.POWER_REQ}      unit="shp"   />
+          <OutRow label="Collective Avail"   value={outputs.COLLECTIVE_AVAIL}    unit="°"  />
+          <OutRow label="Collective Req"     value={outputs.COLLECTIVE_REQ}      unit="°"  />
           <OutRow
-            label="Power Balance"
-            value={`${pb >= 0 ? '+' : ''}${pb}%`}
-            warn={pb < 0}
-            good={pb >= 0}
+            label="Collective Headroom"
+            value={outputs.COLLECTIVE_BALANCE !== undefined ? `${outputs.COLLECTIVE_BALANCE >= 0 ? '+' : ''}${outputs.COLLECTIVE_BALANCE}°` : '—'}
+            warn={outputs.COLLECTIVE_BALANCE < 0}
+            good={outputs.COLLECTIVE_BALANCE >= 0}
           />
           <OutRow label="Payload Margin"     value={outputs.PAYLOAD_MARGIN} unit="kg"    />
           <OutRow

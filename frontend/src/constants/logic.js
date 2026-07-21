@@ -29,6 +29,8 @@ export const DEFAULT_AIRCRAFT = {
     jptBase: 600,   // °C at sea level ISA, low-power
     jptRange: 200,  // °C added from idle to rated power
     jptMax: 870,    // °C max continuous (Artouste IIIB)
+    collectiveMin: 2,   // ° at minimum power / autorotation entry
+    collectiveMax: 13,  // ° at rated power (SA316B rotor)
     // Performance chart config — ref: CHETAK GRAPH + COMMON GRAPHS (SA316B)
     vmaxFactor: 1222, // ~108 kts at 1450 kg, sea level
     rocBase: 2700,   // ~600 ft/min at MAUW, sea level (SA316B ROC chart)
@@ -51,6 +53,8 @@ export const DEFAULT_AIRCRAFT = {
     jptBase: 600,
     jptRange: 200,
     jptMax: 870,
+    collectiveMin: 2,
+    collectiveMax: 13,  // same rotor as SA316B
     // Performance chart config — ref: CHEETAH GRAPH (Lama)
     vmaxFactor: 1221, // same Lama calibration as CHETAK GRAPH left (~108 kts at 1450 kg)
     rocBase: 3500,
@@ -73,6 +77,8 @@ export const DEFAULT_AIRCRAFT = {
     jptBase: 620,
     jptRange: 230,
     jptMax: 900,   // °C max continuous (TM333-2M2)
+    collectiveMin: 2,
+    collectiveMax: 14,  // ° at rated power (Dhruv 4-blade hingeless rotor)
     // Performance chart config — higher-power (847 shp vs 550 shp on Cheetah)
     vmaxFactor: 1265, // slightly higher speed envelope from more power
     rocBase: 5000,
@@ -147,6 +153,12 @@ export const DEFAULT_FORMULAS = {
   POWER_REQ: 'baseline_power_req * (auw / mauw) * (1 + (density_alt / 40000))',
   // Jet Pipe Temperature (°C) - rises with power loading, OAT above ISA, and density altitude
   JPT: 'jpt_base + (power_req / rated_power) * jpt_range + ab_temp * 1.5 + density_alt / 2000',
+  // Collective pitch required to hover at current AUW / conditions (°)
+  COLLECTIVE_REQ: 'collective_min + (power_req / rated_power) * (collective_max - collective_min)',
+  // Collective pitch available before engine power limit is reached (°)
+  COLLECTIVE_AVAIL: 'collective_min + (power_avail / rated_power) * (collective_max - collective_min)',
+  // Headroom: how many additional degrees of collective remain before limit (°)
+  COLLECTIVE_BALANCE: 'collective_avail - collective_req',
 };
 
 export const FORMULA_META = [
@@ -159,6 +171,9 @@ export const FORMULA_META = [
   { key: 'POWER_AVAIL', label: 'Power Available (shp)', vars: 'rated_power, density_alt' },
   { key: 'POWER_REQ', label: 'Power Required (shp)', vars: 'baseline_power_req, auw, mauw, density_alt' },
   { key: 'JPT', label: 'Jet Pipe Temperature (°C)', vars: 'power_req, rated_power, jpt_base, jpt_range, ab_temp, density_alt' },
+  { key: 'COLLECTIVE_REQ', label: 'Collective Pitch Required (°)', vars: 'power_req, rated_power, collective_min, collective_max' },
+  { key: 'COLLECTIVE_AVAIL', label: 'Collective Pitch Available (°)', vars: 'power_avail, rated_power, collective_min, collective_max' },
+  { key: 'COLLECTIVE_BALANCE', label: 'Collective Headroom (°)', vars: 'collective_req, collective_avail' },
 ];
 
 /* ---------------- WIZARD FIELDS (Operational Inputs step order + limits) ---------------- */
@@ -246,6 +261,21 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     jpt_range: aircraft.jptRange ?? 200,
   });
 
+  const collectiveCtx = {
+    ...baseCtx,
+    power_req: POWER_REQ,
+    power_avail: POWER_AVAIL,
+    collective_min: aircraft.collectiveMin ?? 2,
+    collective_max: aircraft.collectiveMax ?? 13,
+  };
+  const COLLECTIVE_REQ = safeEval(formulas.COLLECTIVE_REQ, collectiveCtx);
+  const COLLECTIVE_AVAIL = safeEval(formulas.COLLECTIVE_AVAIL, collectiveCtx);
+  const COLLECTIVE_BALANCE = safeEval(formulas.COLLECTIVE_BALANCE, {
+    ...collectiveCtx,
+    collective_req: COLLECTIVE_REQ,
+    collective_avail: COLLECTIVE_AVAIL,
+  });
+
   // Fit to Fly checks (0.01 precision)
   const reasons = [];
   if (AUW - aircraft.mauw > 0.01) {
@@ -277,6 +307,9 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     AUW_MARGIN: round(AUW_MARGIN),
     PAYLOAD_MARGIN,
     JPT: round(JPT),
+    COLLECTIVE_REQ: round(COLLECTIVE_REQ, 1),
+    COLLECTIVE_AVAIL: round(COLLECTIVE_AVAIL, 1),
+    COLLECTIVE_BALANCE: round(COLLECTIVE_BALANCE, 1),
     status: reasons.length === 0 ? 'FIT' : 'NOT_FIT',
     reasons,
   };
