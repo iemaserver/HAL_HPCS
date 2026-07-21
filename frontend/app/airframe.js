@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronRight, FolderClock, Settings as SettingsIcon } from 'lucide-react-native';
+import { ChevronRight, Menu } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
+import AppMenu from '../src/components/AppMenu';
 
 const HELI_IMG = {
   chetak: 'https://images.unsplash.com/photo-1528474078150-7324b0375b1c?crop=entropy&cs=srgb&fm=jpg&w=400&q=80',
@@ -18,20 +19,17 @@ export default function Airframe() {
   const router = useRouter();
   const { aircraftDefaults, selectedAircraftId, setSelectedAircraftId } = useAppState();
   const insets = useSafeAreaInsets();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="airframe-screen">
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Helicopter Performance System</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => router.push('/reports')} style={styles.headerBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} testID="open-reports-btn">
-            <FolderClock size={18} color={COLORS.textMuted} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/settings')} style={styles.headerBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} testID="open-settings-btn">
-            <SettingsIcon size={18} color={COLORS.textMuted} />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={() => setMenuOpen(true)} style={styles.headerBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} testID="open-menu-btn">
+          <Menu size={20} color={COLORS.textMuted} />
+        </TouchableOpacity>
       </View>
+      <AppMenu visible={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <ScrollView contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 120 }}>
         <Text style={styles.sectionTitle}>Select Airframe</Text>

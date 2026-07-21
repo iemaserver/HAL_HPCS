@@ -15,6 +15,7 @@ export default function RootLayout() {
           <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="airframe" />
+            <Stack.Screen name="calculator" />
             <Stack.Screen name="wizard" />
             <Stack.Screen name="review" />
             <Stack.Screen name="results" />

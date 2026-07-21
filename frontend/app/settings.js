@@ -5,7 +5,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Toast from 'react-native-toast-message';
-import { ChevronLeft, RotateCcw, Save as SaveIcon } from 'lucide-react-native';
+import { ChevronLeft, RotateCcw, Save as SaveIcon, Menu } from 'lucide-react-native';
+import AppMenu from '../src/components/AppMenu';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
 import { FORMULA_META, DEFAULT_AIRCRAFT, DEFAULT_FORMULAS, computePerformance } from '../src/constants/logic';
@@ -27,6 +28,7 @@ export default function Settings() {
 
   const [localAC, setLocalAC] = useState(aircraftDefaults);
   const [localF, setLocalF] = useState(formulas);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => { setLocalAC(aircraftDefaults); }, [aircraftDefaults]);
   useEffect(() => { setLocalF(formulas); }, [formulas]);
@@ -94,7 +96,11 @@ export default function Settings() {
         <TouchableOpacity onPress={reset} style={styles.headerBtn} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} testID="reset-config-btn">
           <RotateCcw size={18} color="#fff" />
         </TouchableOpacity>
+        <TouchableOpacity onPress={() => setMenuOpen(true)} style={styles.headerBtn} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} testID="open-menu-btn">
+          <Menu size={20} color="#fff" />
+        </TouchableOpacity>
       </View>
+      <AppMenu visible={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView

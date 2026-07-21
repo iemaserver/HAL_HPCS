@@ -123,7 +123,7 @@ export default function Results() {
           <View style={styles.sep} />
           <SumCell label="Temp" value={`${inputs.temperature}°C`} testID="sum-temp" />
           <View style={styles.sep} />
-          <SumCell label="Altitude" value={`${outputs.PA.toLocaleString()} ft`} testID="sum-alt" />
+          <SumCell label="Pressure Alt" value={`${outputs.PA.toLocaleString()} ft`} testID="sum-alt" />
         </View>
 
         {/* Status banner */}

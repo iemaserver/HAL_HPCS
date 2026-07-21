@@ -7,8 +7,9 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import {
-  ChevronLeft, CheckCircle2, AlertTriangle, Save, Share2, FolderClock, RotateCcw, Mic,
+  ChevronLeft, CheckCircle2, AlertTriangle, Save, Share2, RotateCcw, Mic, Menu, BarChart2,
 } from 'lucide-react-native';
+import AppMenu from '../src/components/AppMenu';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
 import { WIZARD_FIELDS, fromBaseUnit, toBaseUnit } from '../src/constants/logic';
@@ -107,6 +108,7 @@ export default function Calculator() {
 
   const [saveOpen, setSaveOpen] = useState(false);
   const [reportName, setReportName] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
   // ref avoids stale closures in speech event handlers (state would capture the initial null)
   const activeVoiceFieldRef = useRef(null);
   const [listeningField, setListeningField] = useState(null);
@@ -153,18 +155,20 @@ export default function Calculator() {
     ExpoSpeechRecognitionModule.start({ lang: 'en-US', continuous: false, interimResults: false });
   };
 
-  // Pre-fill any null inputs with aircraft defaults when aircraft changes or on mount
+  // When aircraft changes: always reset aircraft-specific fields to the new aircraft's
+  // values (empty weight, fuel). Environmental and payload inputs persist — same sortie
+  // location, same crew, same load may be moved to a different airframe.
   useEffect(() => {
-    const fill = {};
-    if (inputs.elevation == null) fill.elevation = aircraft.defaultElevation;
-    if (inputs.qnh == null) fill.qnh = aircraft.defaultQNH;
-    if (inputs.temperature == null) fill.temperature = aircraft.defaultTemp;
-    if (inputs.acWeight == null) fill.acWeight = aircraft.emptyWeight;
-    if (inputs.crewWeight == null) fill.crewWeight = aircraft.defaultCrew;
-    if (inputs.fuel == null) fill.fuel = aircraft.defaultFuel;
-    if (inputs.additionalLoad == null) fill.additionalLoad = aircraft.defaultAddLoad;
-    if (inputs.payload == null) fill.payload = aircraft.defaultPayload;
-    if (Object.keys(fill).length > 0) setInputs(fill);
+    setInputs({
+      acWeight: aircraft.emptyWeight,
+      fuel: aircraft.defaultFuel,
+      ...(inputs.elevation == null  && { elevation:       aircraft.defaultElevation }),
+      ...(inputs.qnh == null        && { qnh:             aircraft.defaultQNH }),
+      ...(inputs.temperature == null && { temperature:    aircraft.defaultTemp }),
+      ...(inputs.crewWeight == null  && { crewWeight:     aircraft.defaultCrew }),
+      ...(inputs.additionalLoad == null && { additionalLoad: aircraft.defaultAddLoad }),
+      ...(inputs.payload == null    && { payload:         aircraft.defaultPayload }),
+    });
   }, [selectedAircraftId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doReset = () => {
@@ -238,10 +242,12 @@ export default function Calculator() {
             : <AlertTriangle size={13} color="#fff" />}
           <Text style={styles.fitText}>{isFit ? 'FIT' : 'NOT FIT'}</Text>
         </View>
-        <TouchableOpacity onPress={() => router.push('/reports')} style={styles.hBtn}>
-          <FolderClock size={18} color={COLORS.textMuted} />
+        <TouchableOpacity onPress={() => setMenuOpen(true)} style={styles.hBtn}>
+          <Menu size={18} color={COLORS.textMuted} />
         </TouchableOpacity>
       </View>
+
+      <AppMenu visible={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: 24 + insets.bottom }]}
@@ -311,6 +317,15 @@ export default function Calculator() {
         </View>
 
         {/* ── ACTIONS ── */}
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.chartsBtn]}
+          onPress={() => router.push('/results')}
+        >
+          <BarChart2 style={styles.barChartIcon} size={16} color={COLORS.primaryDark} />
+          <Text style={styles.chartsBtnText}>View Performance Charts</Text>
+          <ChevronLeft size={14} color={COLORS.primaryDark} style={{ transform: [{ rotate: '180deg' }] }} />
+        </TouchableOpacity>
+
         <View style={styles.actionRow}>
           <TouchableOpacity style={[styles.actionBtn, styles.primaryBtn]} onPress={openSave}>
             <Save size={15} color="#fff" />
@@ -437,7 +452,14 @@ const styles = StyleSheet.create({
   warnText: { fontSize: 12, color: COLORS.error, fontWeight: '600', lineHeight: 18 },
 
   // Action buttons
-  actionRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg },
+  chartsBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: SPACING.sm, paddingVertical: 14, borderRadius: RADIUS.md, marginTop: SPACING.lg,
+    backgroundColor: COLORS.primaryLight, borderWidth: 1.5, borderColor: COLORS.primary,
+  },
+  barChartIcon: { alignSelf: 'center' },
+  chartsBtnText: { textAlign: 'center', color: COLORS.primaryDark, fontWeight: '800', fontSize: 14 },
+  actionRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
   actionBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 5, paddingVertical: 13, borderRadius: RADIUS.md,

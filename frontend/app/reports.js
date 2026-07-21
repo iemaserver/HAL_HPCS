@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Toast from 'react-native-toast-message';
-import { ChevronLeft, Share2, Trash2, FileText, Inbox } from 'lucide-react-native';
+import { ChevronLeft, Share2, Trash2, FileText, Inbox, Menu } from 'lucide-react-native';
+import AppMenu from '../src/components/AppMenu';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { listReports, deleteReport } from '../src/services/database';
 import { generateAndSharePdf } from '../src/utils/pdf';
@@ -13,6 +14,7 @@ export default function Reports() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [confirmId, setConfirmId] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -53,7 +55,11 @@ export default function Reports() {
           <ChevronLeft size={22} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Saved Reports</Text>
+        <TouchableOpacity onPress={() => setMenuOpen(true)} style={styles.headerBtn} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} testID="open-menu-btn">
+          <Menu size={20} color="#fff" />
+        </TouchableOpacity>
       </View>
+      <AppMenu visible={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <ScrollView contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 32 }}>
         {items.length === 0 && !loading && (
