@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronRight, Menu } from 'lucide-react-native';
+import { Menu, Mic, Settings, CheckSquare } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
 import AppMenu from '../src/components/AppMenu';
@@ -13,25 +13,95 @@ const HELI_IMG = {
   cheetal: require('../assets/images/Cheetal-1.png'),
 };
 
-const AIRFRAMES = ['chetak', 'cheetah', 'cheetal'];
+// Display order per Figma "HAL Design v.03 (Latest)" — Cheetah, Cheetal, Chetak.
+const AIRFRAMES = ['cheetah', 'cheetal', 'chetak'];
+
+// Figma-specific brand colors used only on this screen (not part of the shared theme palette).
+const FIGMA = {
+  headerBlue: '#00B9F2',
+  mic: '#F04438',
+  thumbBg: '#DFF7FF',
+  cardBg: '#EAFBFF',
+  cardBorder: '#D4D4D4',
+  nameMuted: '#636363',
+  subMuted: '#667085',
+};
 
 export default function Airframe() {
   const router = useRouter();
   const { aircraftDefaults, selectedAircraftId, setSelectedAircraftId } = useAppState();
-  const insets = useSafeAreaInsets();
   const [menuOpen, setMenuOpen] = useState(false);
+  const tapTimeoutRef = useRef(null);
+
+  // Client spec (slide 5): "PREVIOUSLY SELECTED AC OR CHETAK SHOULD BE AUTO
+  // SELECTED" + "IF NO CHANGE WITHIN 2 SEC THE PAGE SHOULD GO TO HOVER CALCULATION
+  // PAGE" — a 2-second inactivity timer for whichever aircraft is currently
+  // selected (the session-persisted `selectedAircraftId`, which already defaults
+  // to 'chetak' in AppState). The timer (re)starts on mount and every time the
+  // selection changes, so idling on a newly-selected card still gets its own full
+  // 2 seconds. It is a separate, longer mechanism from the tap-driven fast path
+  // below: an active tap navigates (and unmounts this screen) well before 2s
+  // elapses, and this effect's cleanup then clears the pending idle timeout so it
+  // can never fire late against a screen the user has already left.
+  useEffect(() => {
+    const idleTimeout = setTimeout(() => {
+      router.push('/calculator');
+    }, 2000);
+    return () => clearTimeout(idleTimeout);
+  }, [selectedAircraftId]);
+
+  // Belt-and-suspenders cleanup for the tap-driven timer (below): on unmount,
+  // clear any pending navigation so navigating away (e.g. to Default Settings and
+  // back) never leaves a stale setTimeout that fires after the user has left.
+  useEffect(() => {
+    return () => {
+      if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
+    };
+  }, []);
+
+  // Figma has no separate "Next" button on this screen in either the default or the
+  // selected state — selecting a card is the only affordance shown. Client spec
+  // (slide 5): "IF AC IS SELECTED SCREEN SHOULD GO TO THAT AC's HOVER POWER
+  // CALCULATION" — any tap on a card (whether it changes the selection or just
+  // re-taps the already-selected one) commits the choice and advances after a
+  // brief delay (long enough to see the "Selected" styling), mirroring the same
+  // select-then-navigate delay pattern already used by AppMenu's own navigate().
+  // This fast path fires well before the 2-second idle timer above would, so it
+  // effectively supersedes it whenever the user actually interacts.
+  const selectAndAdvance = (id) => {
+    setSelectedAircraftId(id);
+    if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
+    tapTimeoutRef.current = setTimeout(() => {
+      router.push('/calculator');
+    }, 350);
+  };
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="airframe-screen">
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Helicopter Performance System</Text>
-        <TouchableOpacity onPress={() => setMenuOpen(true)} style={styles.headerBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} testID="open-menu-btn">
-          <Menu size={20} color={COLORS.textMuted} />
+        <TouchableOpacity
+          onPress={() => setMenuOpen(true)}
+          style={styles.headerIconBtn}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          testID="open-menu-btn"
+        >
+          <Menu size={24} color="#fff" />
+        </TouchableOpacity>
+
+        <Text style={styles.headerTitle}>HAL HPS</Text>
+
+        <TouchableOpacity
+          style={styles.micBtn}
+          // TODO: voice interaction — spec unclear (no interaction defined in Figma), stubbed as no-op
+          onPress={() => {}}
+          testID="airframe-mic-btn"
+        >
+          <Mic size={20} color="#fff" />
         </TouchableOpacity>
       </View>
       <AppMenu visible={menuOpen} onClose={() => setMenuOpen(false)} />
 
-      <ScrollView contentContainerStyle={{ padding: SPACING.lg, paddingBottom: 120 }}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
         <Text style={styles.sectionTitle}>Select Airframe</Text>
         <Text style={styles.sectionSub}>Choose the helicopter type to check performance profile.</Text>
 
@@ -41,76 +111,155 @@ export default function Airframe() {
             return (
               <TouchableOpacity
                 key={id}
-                onPress={() => setSelectedAircraftId(id)}
+                onPress={() => selectAndAdvance(id)}
                 style={[styles.card, active && styles.cardActive]}
                 activeOpacity={0.85}
                 testID={`airframe-${id}`}
               >
-                <Image source={HELI_IMG[id]} style={styles.img} resizeMode="cover" />
-                <Text style={[styles.name, active && { color: COLORS.primaryDark }]}>
+                <View style={styles.thumbWrap}>
+                  <Image source={HELI_IMG[id]} style={styles.img} resizeMode="contain" />
+                </View>
+                <Text style={[styles.name, active && styles.nameActive]} numberOfLines={1}>
                   {aircraftDefaults[id].name}
                 </Text>
                 {active && (
                   <View style={styles.selectedPill}>
                     <Text style={styles.selectedPillText}>Selected</Text>
+                    <CheckSquare size={14} color="#fff" />
                   </View>
                 )}
               </TouchableOpacity>
             );
           })}
         </View>
-      </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: SPACING.lg + insets.bottom }]}>
+        <View style={styles.divider} />
+
+        <Text style={styles.configTitle}>Default Configuration</Text>
+        <Text style={styles.configSub}>Apply recommended performance parameters for aircraft.</Text>
+
         <TouchableOpacity
-          style={styles.nextBtn}
-          onPress={() => router.push('/calculator')}
-          testID="airframe-next-btn"
+          style={styles.defaultSettingsBtn}
+          onPress={() => router.push('/default-settings')}
           activeOpacity={0.9}
+          testID="airframe-default-settings-btn"
         >
-          <Text style={styles.nextText}>Next</Text>
-          <ChevronRight size={20} color="#fff" />
+          <Settings size={22} color="#fff" />
+          <Text style={styles.defaultSettingsText}>Default Settings</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: COLORS.bg },
+  root: { flex: 1, backgroundColor: COLORS.card },
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg, paddingVertical: SPACING.md, backgroundColor: COLORS.card,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.lg,
+    backgroundColor: FIGMA.headerBlue,
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
+    ...SHADOW,
   },
-  headerTitle: { color: COLORS.text, fontWeight: '900', fontSize: 15, flex: 1 },
-  headerActions: { flexDirection: 'row', gap: SPACING.sm },
-  headerBtn: {
-    width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.bg,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border,
+  headerIconBtn: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sectionTitle: { fontSize: 20, fontWeight: '900', color: COLORS.text, letterSpacing: -0.3 },
-  sectionSub: { color: COLORS.textMuted, fontSize: 13, marginTop: 2, marginBottom: SPACING.lg },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  micBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: FIGMA.mic,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  scrollContent: { padding: SPACING.lg, paddingBottom: SPACING.xxl },
+
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: COLORS.text },
+  sectionSub: { color: FIGMA.subMuted, fontSize: 13, marginTop: 2, marginBottom: SPACING.lg },
+
   list: { gap: SPACING.md },
   card: {
-    backgroundColor: COLORS.card, borderRadius: RADIUS.lg, padding: SPACING.md,
-    borderWidth: 2, borderColor: COLORS.border, ...SHADOW,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.card,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: FIGMA.cardBorder,
+    padding: 7,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  cardActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight },
-  img: { width: '100%', height: 140, borderRadius: RADIUS.md, backgroundColor: COLORS.bg },
-  name: { marginTop: SPACING.sm, fontWeight: '900', fontSize: 17, color: COLORS.text },
+  cardActive: {
+    borderWidth: 2,
+    borderColor: FIGMA.headerBlue,
+    backgroundColor: FIGMA.cardBg,
+  },
+  thumbWrap: {
+    width: 150,
+    height: 90,
+    borderRadius: 10,
+    backgroundColor: FIGMA.thumbBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  img: { width: '85%', height: '75%' },
+  name: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: '500',
+    color: FIGMA.nameMuted,
+  },
+  nameActive: { color: COLORS.text, fontWeight: '700' },
   selectedPill: {
-    position: 'absolute', top: SPACING.md, right: SPACING.md,
-    backgroundColor: COLORS.primary, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: FIGMA.headerBlue,
+    borderTopRightRadius: 9,
+    borderBottomLeftRadius: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  selectedPillText: { color: '#fff', fontWeight: '800', fontSize: 11 },
-  footer: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    padding: SPACING.lg, backgroundColor: 'rgba(245,247,251,0.95)',
+  selectedPillText: { color: '#fff', fontWeight: '600', fontSize: 12 },
+
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginVertical: SPACING.xl,
   },
-  nextBtn: {
-    backgroundColor: COLORS.primary, paddingVertical: 18, borderRadius: RADIUS.lg,
-    flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: SPACING.sm, ...SHADOW,
+
+  configTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text },
+  configSub: { color: FIGMA.subMuted, fontSize: 13, marginTop: 2, marginBottom: SPACING.lg },
+
+  defaultSettingsBtn: {
+    height: 48,
+    borderRadius: RADIUS.sm,
+    backgroundColor: FIGMA.headerBlue,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    ...SHADOW,
   },
-  nextText: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  defaultSettingsText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });

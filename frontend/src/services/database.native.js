@@ -84,7 +84,18 @@ const writeConfig = async (key, value) => {
 
 export const loadAircraftDefaults = async () => {
   const raw = await readConfig('aircraft_defaults');
-  if (raw) { try { return JSON.parse(raw); } catch { /* ignore */ } }
+  if (raw) {
+    try {
+      const saved = JSON.parse(raw);
+      // Deep-merge per aircraft so fields added to DEFAULT_AIRCRAFT after a device's last
+      // save (e.g. the new weight-breakdown / Zσ / Dθ fields) aren't silently missing.
+      const merged = {};
+      for (const id of Object.keys(DEFAULT_AIRCRAFT)) {
+        merged[id] = { ...DEFAULT_AIRCRAFT[id], ...(saved[id] || {}) };
+      }
+      return merged;
+    } catch { /* ignore */ }
+  }
   return DEFAULT_AIRCRAFT;
 };
 

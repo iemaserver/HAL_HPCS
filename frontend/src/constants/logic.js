@@ -11,12 +11,49 @@
  * (persisted in SQLite, loaded at app boot).
  */
 
+/**
+ * AUW envelope thresholds (client PPTX slides 9–11):
+ *   - Chetak:            lower 4630 Lb · upper (MAUW) 4850 Lb
+ *   - Cheetah / Cheetal:  lower 4300 Lb · upper (MAUW) 5070 Lb
+ * `mauw` continues to serve as the single upper/ceiling value used by the
+ * existing Fit-to-Fly check. `auwLowerThresholdKg` is new — it is only used
+ * to compute the "Possible Payload for <lower>" display on Hover Power Calc.
+ *
+ * DECISION (confirmed with the user): the PPTX explicitly gives Cheetah AND
+ * Cheetal the SAME pair of AUW figures (4300 / 5070 Lb). Cheetal's old mauw
+ * (2250 kg) didn't match 5070 Lb and has been corrected. Cheetah's old mauw
+ * (1950 kg) actually matched the *lower* 4300 Lb figure, not the 5070 Lb
+ * upper figure the PPTX assigns to it — so it has also been corrected here
+ * to keep Cheetah/Cheetal's envelopes identical, matching the PPTX. Flagged
+ * explicitly in the implementation report; the literal instruction text only
+ * called out Cheetal, so double-check this Cheetah change is wanted.
+ */
 export const DEFAULT_AIRCRAFT = {
   chetak: {
     id: 'chetak',
     name: 'Chetak',
     emptyWeight: 1165,
-    mauw: 2200,
+    // Weight breakdown (client PPTX slide 7/9): Empty Weight = Basic + Equipment + Pilot + Copilot.
+    // Seed values split the legacy emptyWeight so first-run defaults don't jump; all four are
+    // user-editable per-aircraft on Default Settings / Hover Power Calculation.
+    basicWeight: 985,
+    equipmentWeight: 0,
+    pilotWeight: 90,
+    copilotWeight: 90,
+    // Ageing Coefficient / JPT Correction — captured only, not wired into any formula (see TODO below).
+    ageingCoefficient: 0,
+    jptCorrection: 0,
+    // Default Settings page 2 reference table (slide 8): ZP0/T0 are user-entered;
+    // ZP1-4/T1-4 are computed from them (see buildAltitudeTempTable below).
+    zp0: 0,
+    t0: 15,
+    // Zσ1-4 / Dθ1-4 — read off a flight-manual chart per sortie; no formula given in the
+    // PPTX, so these are captured-only fields (null = not yet entered). See TODO in
+    // computePerformance().
+    zSigma1: null, zSigma2: null, zSigma3: null, zSigma4: null,
+    dTheta1: null, dTheta2: null, dTheta3: null, dTheta4: null,
+    mauw: 2200,               // upper AUW threshold ≈ 4850 Lb
+    auwLowerThresholdKg: 2100.13, // lower AUW threshold ≈ 4630 Lb (4630 × 0.453592)
     ratedPowerSHP: 550,
     baselinePowerReqSHP: 420,
     defaultCrew: 180,
@@ -40,7 +77,18 @@ export const DEFAULT_AIRCRAFT = {
     id: 'cheetah',
     name: 'Cheetah',
     emptyWeight: 1120,
-    mauw: 1950,
+    basicWeight: 940,
+    equipmentWeight: 0,
+    pilotWeight: 90,
+    copilotWeight: 90,
+    ageingCoefficient: 0,
+    jptCorrection: 0,
+    zp0: 0,
+    t0: 15,
+    zSigma1: null, zSigma2: null, zSigma3: null, zSigma4: null,
+    dTheta1: null, dTheta2: null, dTheta3: null, dTheta4: null,
+    mauw: 2299.71,              // upper AUW threshold ≈ 5070 Lb (5070 × 0.453592) — see note above
+    auwLowerThresholdKg: 1950.45, // lower AUW threshold ≈ 4300 Lb (4300 × 0.453592)
     ratedPowerSHP: 550,
     baselinePowerReqSHP: 410,
     defaultCrew: 180,
@@ -64,7 +112,18 @@ export const DEFAULT_AIRCRAFT = {
     id: 'cheetal',
     name: 'Cheetal',
     emptyWeight: 1250,
-    mauw: 2250,
+    basicWeight: 1070,
+    equipmentWeight: 0,
+    pilotWeight: 90,
+    copilotWeight: 90,
+    ageingCoefficient: 0,
+    jptCorrection: 0,
+    zp0: 0,
+    t0: 15,
+    zSigma1: null, zSigma2: null, zSigma3: null, zSigma4: null,
+    dTheta1: null, dTheta2: null, dTheta3: null, dTheta4: null,
+    mauw: 2299.71,              // upper AUW threshold ≈ 5070 Lb (5070 × 0.453592) — was 2250
+    auwLowerThresholdKg: 1950.45, // lower AUW threshold ≈ 4300 Lb (4300 × 0.453592)
     ratedPowerSHP: 847,
     baselinePowerReqSHP: 520,
     defaultCrew: 180,
@@ -145,8 +204,11 @@ export const DEFAULT_FORMULAS = {
   DENSITY: '1.225 * Math.pow(1 - 0.0000068756 * pa, 4.2561) * (288.15 / (oat + 273.15))',
   // Above-ISA temperature deviation (°C)
   AB_TEMP: 'oat - isa',
-  // All Up Weight (kg)
-  AUW: 'ac_weight + crew + fuel + payload + add_load',
+  // Empty Weight (kg) — client PPTX: EMPTY WEIGHT = BASIC(AIRCRAFT) WEIGHT + EQUIPMENT WEIGHT + PILOT WEIGHT + COPILOT WEIGHT
+  EMPTY_WEIGHT: 'basic_weight + equipment_weight + pilot_weight + copilot_weight',
+  // All Up Weight (kg) — client PPTX: ALL UP WEIGHT = EMPTY WEIGHT + FUEL WEIGHT + PASSENGER WEIGHT + LOAD
+  // (`crew` = Passenger Weight, `payload` = Load — existing field names kept for continuity)
+  AUW: 'empty_weight + fuel + crew + payload',
   // Power Available (shp) - derates with density altitude
   POWER_AVAIL: 'rated_power * Math.max(0.55, 1 - (density_alt / 30000))',
   // Power Required (shp) - scales with AUW & density altitude
@@ -167,7 +229,8 @@ export const FORMULA_META = [
   { key: 'DENSITY_ALT', label: 'Density Altitude (ft)', vars: 'pa, oat, isa' },
   { key: 'DENSITY', label: 'Air Density (kg/m³)', vars: 'pa, oat' },
   { key: 'AB_TEMP', label: 'AB Temperature (°C)', vars: 'oat, isa' },
-  { key: 'AUW', label: 'All Up Weight (kg)', vars: 'ac_weight, crew, fuel, payload, add_load' },
+  { key: 'EMPTY_WEIGHT', label: 'Empty Weight (kg)', vars: 'basic_weight, equipment_weight, pilot_weight, copilot_weight' },
+  { key: 'AUW', label: 'All Up Weight (kg)', vars: 'empty_weight, fuel, crew, payload' },
   { key: 'POWER_AVAIL', label: 'Power Available (shp)', vars: 'rated_power, density_alt' },
   { key: 'POWER_REQ', label: 'Power Required (shp)', vars: 'baseline_power_req, auw, mauw, density_alt' },
   { key: 'JPT', label: 'Jet Pipe Temperature (°C)', vars: 'power_req, rated_power, jpt_base, jpt_range, ab_temp, density_alt' },
@@ -210,6 +273,13 @@ const safeEval = (expr, ctx) => {
 
 const round = (n, p = 2) => Math.round(n * Math.pow(10, p)) / Math.pow(10, p);
 
+// TODO(client formula pending): Zσ1-4, Dθ1-4 (Default Settings page 2), Ageing Coefficient
+// and JPT Correction (Default Settings page 1) are captured on `aircraft` but are NOT
+// consumed by computePerformance() or any formula below. The client's PPTX describes Dθ as
+// "max collective pitch/max power AS PER THE EQUATION" but never states that equation, and
+// gives no interpolation method for Zσ/Dθ or a modifier formula for Ageing/JPT Correction —
+// this is safety-relevant aviation data, so nothing is invented here pending an explicit
+// method from the client.
 export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
   const { aircraft } = inputs;
 
@@ -217,10 +287,23 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     elevation: Number(inputs.elevation) || 0,
     qnh: Number(inputs.qnh) || 1013.25,
     oat: Number(inputs.temperature) || 15,
+    // Legacy single-figure aircraft weight — kept in ctx for custom/user-edited formulas
+    // (Settings screen) that may still reference it, but the default AUW formula below no
+    // longer uses it directly; empty weight is now the sum of the four fields below.
     ac_weight: Number(inputs.acWeight) || aircraft.emptyWeight,
-    crew: Number(inputs.crewWeight) || 0,
+    // Weight breakdown (client PPTX) — stored per-aircraft on `aircraft`, editable from both
+    // Default Settings and Hover Power Calculation (single source of truth, so edits on either
+    // screen are automatically visible on the other).
+    basic_weight: Number(aircraft.basicWeight) || 0,
+    equipment_weight: Number(aircraft.equipmentWeight) || 0,
+    pilot_weight: Number(aircraft.pilotWeight) || 0,
+    copilot_weight: Number(aircraft.copilotWeight) || 0,
+    crew: Number(inputs.crewWeight) || 0, // "Passenger Weight" field
     fuel: Number(inputs.fuel) || 0,
-    payload: Number(inputs.payload) || 0,
+    payload: Number(inputs.payload) || 0, // "Load" field
+    // additionalLoad/add_load has no place in the client's explicit 4-term AUW formula
+    // (EMPTY WEIGHT + FUEL + PASSENGER WEIGHT + LOAD) — kept in ctx harmlessly for any
+    // custom formula that still references it, but unused by the default AUW below.
     add_load: Number(inputs.additionalLoad) || 0,
     mauw: aircraft.mauw,
     rated_power: aircraft.ratedPowerSHP,
@@ -232,7 +315,8 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
   const DENSITY_ALT = safeEval(formulas.DENSITY_ALT, { ...baseCtx, pa: PA, isa: ISA_TEMP });
   const DENSITY = safeEval(formulas.DENSITY, { ...baseCtx, pa: PA });
   const AB_TEMP = safeEval(formulas.AB_TEMP, { ...baseCtx, isa: ISA_TEMP });
-  const AUW = safeEval(formulas.AUW, baseCtx);
+  const EMPTY_WEIGHT = safeEval(formulas.EMPTY_WEIGHT, baseCtx);
+  const AUW = safeEval(formulas.AUW, { ...baseCtx, empty_weight: EMPTY_WEIGHT });
   const POWER_AVAIL = safeEval(formulas.POWER_AVAIL, {
     ...baseCtx, density_alt: DENSITY_ALT, auw: AUW,
   });
@@ -251,6 +335,13 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
   const PAYLOAD_MARGIN = Math.round(
     Math.min(Math.max(AUW_MARGIN, 0), AUW * powerHeadroomFactor)
   );
+
+  // "Possible Payload for <threshold>" (client PPTX slides 9-11) — max Load still achievable
+  // within each AUW threshold, i.e. threshold minus everything except Load itself. Not a new
+  // physics formula, just a margin against the two stored thresholds (see DEFAULT_AIRCRAFT).
+  const nonLoadWeight = EMPTY_WEIGHT + baseCtx.fuel + baseCtx.crew;
+  const POSSIBLE_PAYLOAD_LOWER = round((aircraft.auwLowerThresholdKg ?? aircraft.mauw) - nonLoadWeight);
+  const POSSIBLE_PAYLOAD_UPPER = round(aircraft.mauw - nonLoadWeight);
 
   const JPT = safeEval(formulas.JPT, {
     ...baseCtx,
@@ -300,12 +391,15 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     DENSITY_ALT: round(DENSITY_ALT),
     DENSITY: round(DENSITY, 4),
     AB_TEMP: round(AB_TEMP),
+    EMPTY_WEIGHT: round(EMPTY_WEIGHT),
     AUW: round(AUW),
     POWER_AVAIL: round(POWER_AVAIL),
     POWER_REQ: round(POWER_REQ),
     POWER_BALANCE_PCT,
     AUW_MARGIN: round(AUW_MARGIN),
     PAYLOAD_MARGIN,
+    POSSIBLE_PAYLOAD_LOWER,
+    POSSIBLE_PAYLOAD_UPPER,
     JPT: round(JPT),
     COLLECTIVE_REQ: round(COLLECTIVE_REQ, 1),
     COLLECTIVE_AVAIL: round(COLLECTIVE_AVAIL, 1),
@@ -397,6 +491,50 @@ export const CHART_OAT_MIN = -30;
 export const CHART_OAT_MAX = 50;
 export const CHART_PA_MAX = 20000;
 export const CHART_PA_DA_CONTOURS = [0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000, 20000];
+
+/* ---------------- DEFAULT SETTINGS — ZPn/Tn REFERENCE TABLE (page 2/2) ---------------- */
+// Client PPTX slide 8: ZPn = ZP0 + 2000n ft (computed), Tn = T0 - (2n × 1.98) °C (computed) —
+// same 1.98 lapse-rate constant already used by ISA_TEMP above. ZP0/T0 themselves are plain
+// user-entered fields on `aircraft` (see DEFAULT_AIRCRAFT) — no formula given for them.
+export const buildAltitudeTempTable = (aircraft) => {
+  const zp0 = Number(aircraft.zp0) || 0;
+  const t0 = Number(aircraft.t0) || 0;
+  return Array.from({ length: 4 }, (_, i) => {
+    const n = i + 1;
+    return {
+      n,
+      zp: zp0 + 2000 * n,
+      t: round(t0 - n * 2 * 1.98),
+    };
+  });
+};
+
+/* ---------------- HOVER POWER CALCULATION — JPT vs DENSITY ALTITUDE ---------------- */
+// "JPT Calculation on Graph" (client PPTX slides 9/10) — sweeps the EXISTING JPT/POWER_REQ
+// formulas across a density-altitude range at the current AUW, holding the current
+// above-ISA deviation constant. Reuses the already-computed formulas verbatim; no new
+// physics is introduced.
+export const buildJPTvsDACurve = (aircraft, abTemp, auwKg, formulas = DEFAULT_FORMULAS) => {
+  const points = [];
+  for (let da = 0; da <= 20000; da += 1000) {
+    const power_req = safeEval(formulas.POWER_REQ, {
+      baseline_power_req: aircraft.baselinePowerReqSHP,
+      auw: auwKg,
+      mauw: aircraft.mauw,
+      density_alt: da,
+    });
+    const jpt = safeEval(formulas.JPT, {
+      power_req,
+      rated_power: aircraft.ratedPowerSHP,
+      jpt_base: aircraft.jptBase ?? 600,
+      jpt_range: aircraft.jptRange ?? 200,
+      ab_temp: abTemp,
+      density_alt: da,
+    });
+    points.push({ da, jpt: round(jpt) });
+  }
+  return points;
+};
 
 export const buildPADAContours = () =>
   CHART_PA_DA_CONTOURS.map((da) => {

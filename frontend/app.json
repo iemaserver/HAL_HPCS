@@ -44,7 +44,10 @@
           "microphonePermission": "Allow HAL Helicopter Performance to use the microphone for voice input.",
           "speechRecognitionPermission": "Allow HAL Helicopter Performance to use speech recognition for voice input."
         }
-      ]
+      ],
+      "expo-sharing",
+      "expo-sqlite",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

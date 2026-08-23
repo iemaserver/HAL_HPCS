@@ -9,6 +9,7 @@ import { DEFAULT_AIRCRAFT, DEFAULT_FORMULAS } from '../constants/logic';
 const WEB_REPORTS_KEY = 'hal_reports';
 const CFG_AIRCRAFT = 'aircraft_defaults';
 const CFG_FORMULAS = 'formulas';
+const CFG_SESSION = 'session';
 const DEVICE_ID_KEY = 'hal_device_id';
 
 const getItem = async (key) => localStorage.getItem(key);
@@ -36,7 +37,18 @@ export const deleteReport = async (id) => {
 
 export const loadAircraftDefaults = async () => {
   const raw = await getItem(`hal_cfg_${CFG_AIRCRAFT}`);
-  if (raw) { try { return JSON.parse(raw); } catch { /* ignore */ } }
+  if (raw) {
+    try {
+      const saved = JSON.parse(raw);
+      // Deep-merge per aircraft so fields added to DEFAULT_AIRCRAFT after a device's last
+      // save (e.g. the new weight-breakdown / Zσ / Dθ fields) aren't silently missing.
+      const merged = {};
+      for (const id of Object.keys(DEFAULT_AIRCRAFT)) {
+        merged[id] = { ...DEFAULT_AIRCRAFT[id], ...(saved[id] || {}) };
+      }
+      return merged;
+    } catch { /* ignore */ }
+  }
   return DEFAULT_AIRCRAFT;
 };
 
@@ -52,6 +64,16 @@ export const loadFormulas = async () => {
 
 export const saveFormulas = async (f) => {
   await setItem(`hal_cfg_${CFG_FORMULAS}`, JSON.stringify(f));
+};
+
+export const loadSession = async () => {
+  const raw = await getItem(`hal_cfg_${CFG_SESSION}`);
+  if (raw) { try { return JSON.parse(raw); } catch { /* ignore */ } }
+  return null;
+};
+
+export const saveSession = async (s) => {
+  await setItem(`hal_cfg_${CFG_SESSION}`, JSON.stringify(s));
 };
 
 export const resetConfig = async () => {

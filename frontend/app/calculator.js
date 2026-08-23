@@ -1,185 +1,244 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Modal, Alert,
+  TextInput, Modal, Alert, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Toast from 'react-native-toast-message';
+import Svg, { Line, Path, Circle, Text as SvgText, G } from 'react-native-svg';
 import {
-  ChevronLeft, CheckCircle2, AlertTriangle, Save, Share2, RotateCcw, Mic, Menu, BarChart2,
+  CheckCircle2, AlertTriangle, Save, Share2, RotateCcw, Menu, Mic, BarChart2,
 } from 'lucide-react-native';
 import AppMenu from '../src/components/AppMenu';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
-import { WIZARD_FIELDS, fromBaseUnit, toBaseUnit } from '../src/constants/logic';
 import {
-  ExpoSpeechRecognitionModule, useSpeechRecognitionEvent, nativeSpeechAvailable,
-} from '../src/utils/speech';
+  fromBaseUnit, toBaseUnit, CONVERSIONS, buildJPTvsDACurve,
+} from '../src/constants/logic';
 import { insertReport, getDeviceId } from '../src/services/database';
 import { generateAndSharePdf } from '../src/utils/pdf';
 
 const pad = (n) => String(n).padStart(2, '0');
-const fmtUnit = (u) => (u === 'C' ? '°C' : u === 'F' ? '°F' : u);
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
-// ── InputRow ─────────────────────────────────────────────────────────────────
-function InputRow({ field, value, unit, onCommit, onUnitChange, isLast, onVoice, isListening, voiceValue }) {
-  const derive = (v, u) =>
-    v !== null && v !== undefined
-      ? String(Math.round(fromBaseUnit(v, u) * 100) / 100)
-      : '';
+// PPTX slide 7/9 spells pressure units "mb" / "mmHg" — numerically identical to the app's
+// internal hPa/inHg unit codes (1 hPa = 1 mb), only the label text differs.
+const UNIT_LABELS = { ft: 'ft', m: 'm', C: '°C', F: '°F', kg: 'Kg', lb: 'Lb', hPa: 'mb', inHg: 'mmHg', L: 'Lt' };
+const fmtUnit = (u) => UNIT_LABELS[u] ?? u;
 
-  const [local, setLocal] = useState(() => derive(value, unit));
-  const [focused, setFocused] = useState(false);
-
-  // Sync display when parent pushes a new value (reset, aircraft change)
-  useEffect(() => {
-    if (!focused) setLocal(derive(value, unit));
-  }, [value, unit]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Voice result: update display immediately and independently of AppState re-render
-  useEffect(() => {
-    if (voiceValue !== null && voiceValue !== undefined) {
-      setLocal(String(Math.round(fromBaseUnit(voiceValue, unit) * 100) / 100));
-    }
-  }, [voiceValue]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const commit = () => {
-    setFocused(false);
-    const n = parseFloat(local);
-    if (!isNaN(n)) onCommit(toBaseUnit(n, unit));
-  };
-
-  const cycleUnit = () => {
-    const n = parseFloat(local);
-    if (!isNaN(n)) onCommit(toBaseUnit(n, unit));
-    const idx = field.unitOptions.indexOf(unit);
-    onUnitChange(field.unitOptions[(idx + 1) % field.unitOptions.length]);
-  };
-
+// ── Segmented unit pill ──
+function UnitPill({ options, active, onSelect }) {
   return (
-    <View style={[styles.inputRow, !isLast && styles.inputRowBorder]}>
-      <Text style={styles.inputLabel}>{field.label}</Text>
-      <TextInput
-        style={styles.inputField}
-        value={local}
-        onChangeText={setLocal}
-        onFocus={() => setFocused(true)}
-        onBlur={commit}
-        onSubmitEditing={commit}
-        keyboardType="numeric"
-        returnKeyType="done"
-        selectTextOnFocus
-      />
-      <TouchableOpacity onPress={cycleUnit} style={styles.unitBtn}>
-        <Text style={styles.unitText}>{fmtUnit(unit)}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        onPress={onVoice}
-        style={[styles.micBtn, isListening && styles.micBtnActive]}
-      >
-        <Mic size={15} color={isListening ? '#fff' : COLORS.textMuted} />
-      </TouchableOpacity>
+    <View style={styles.unitPill}>
+      {options.map((opt) => {
+        const isActive = opt === active;
+        return (
+          <TouchableOpacity
+            key={opt}
+            onPress={() => onSelect(opt)}
+            style={[styles.unitSeg, isActive && styles.unitSegActive]}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.unitSegText, isActive && styles.unitSegTextActive]}>{fmtUnit(opt)}</Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
 
-// ── OutRow ────────────────────────────────────────────────────────────────────
-function OutRow({ label, value, unit, warn, good, isLast }) {
-  const valColor = warn ? COLORS.error : good ? COLORS.success : COLORS.text;
+// ── Editable field cell — "TO BE IN BLOCK/BIGGER FONT" (PPTX) via cellInput's weight/size ──
+function EditableCell({
+  label, required, value, unit, unitOptions, onCommit, onUnitChange, maxLength, highlight, testID,
+}) {
+  const derive = (v, u) => (v !== null && v !== undefined ? String(round2(unit ? fromBaseUnit(v, u) : v)) : '');
+  const [local, setLocal] = useState(() => derive(value, unit));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setLocal(derive(value, unit));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, unit]);
+
+  const commit = () => {
+    setFocused(false);
+    const n = parseFloat(local);
+    if (!isNaN(n)) onCommit(unit ? toBaseUnit(n, unit) : n);
+  };
+
+  const selectUnit = (u) => {
+    const n = parseFloat(local);
+    if (!isNaN(n)) onCommit(toBaseUnit(n, unit));
+    onUnitChange(u);
+  };
+
   return (
-    <View style={[styles.outRow, isLast && styles.outRowLast]}>
-      <Text style={styles.outLabel}>{label}</Text>
-      <View style={styles.outValRow}>
-        <Text style={[styles.outValue, { color: valColor }]}>{value}</Text>
-        {unit ? <Text style={styles.outUnit}> {unit}</Text> : null}
+    <View style={styles.cell} testID={testID}>
+      <Text style={styles.cellLabel}>
+        {label}
+        {required ? <Text style={{ color: COLORS.primary }}> *</Text> : null}
+      </Text>
+      <View style={[styles.cellInputRow, highlight && styles.cellInputRowHighlight]}>
+        <TextInput
+          style={styles.cellInput}
+          value={local}
+          onChangeText={setLocal}
+          onFocus={() => setFocused(true)}
+          onBlur={commit}
+          onSubmitEditing={commit}
+          keyboardType="numeric"
+          returnKeyType="done"
+          maxLength={maxLength}
+          selectTextOnFocus
+        />
+        {unitOptions ? <UnitPill options={unitOptions} active={unit} onSelect={selectUnit} /> : null}
       </View>
     </View>
+  );
+}
+
+// ── Read-only computed cell ──
+function ReadOnlyCell({
+  label, value, unit, unitOptions, onUnitChange, suffix, highlight, warn, testID,
+}) {
+  const display = unit ? round2(fromBaseUnit(value, unit)) : round2(value);
+  return (
+    <View style={styles.cell} testID={testID}>
+      <Text style={[styles.cellLabel, highlight && styles.cellLabelHighlight]}>{label}</Text>
+      <View style={[
+        styles.cellInputRow,
+        highlight && styles.cellInputRowHighlight,
+        warn && styles.cellInputRowWarn,
+      ]}
+      >
+        <Text style={[styles.cellInputStatic, warn && { color: COLORS.error }]}>
+          {display}
+          {suffix ? <Text style={styles.cellSuffix}> {suffix}</Text> : null}
+        </Text>
+        {unitOptions ? <UnitPill options={unitOptions} active={unit} onSelect={onUnitChange || (() => {})} /> : null}
+      </View>
+    </View>
+  );
+}
+
+// ── JPT vs Density Altitude graph ("JPT Calculation on Graph", PPTX slides 9/10) ──
+function JPTGraph({ aircraft, abTemp, auw, currentDA, currentJPT, width, height = 200 }) {
+  const curve = buildJPTvsDACurve(aircraft, abTemp, auw);
+  const padL = 42, padR = 12, padT = 12, padB = 26;
+  const plotW = width - padL - padR;
+  const plotH = height - padT - padB;
+
+  const jptVals = curve.map((p) => p.jpt).concat([currentJPT ?? 0, aircraft.jptMax ?? 870]);
+  const yMin = Math.floor(Math.min(...jptVals) / 50) * 50 - 25;
+  const yMax = Math.ceil(Math.max(...jptVals) / 50) * 50 + 25;
+  const xMax = 20000;
+
+  const sx = (da) => padL + (da / xMax) * plotW;
+  const sy = (jpt) => padT + (1 - (jpt - yMin) / (yMax - yMin)) * plotH;
+
+  const d = curve.map((p, i) => `${i === 0 ? 'M' : 'L'} ${sx(p.da).toFixed(1)} ${sy(p.jpt).toFixed(1)}`).join(' ');
+
+  return (
+    <Svg width={width} height={height}>
+      {[0, 5000, 10000, 15000, 20000].map((da) => (
+        <G key={da}>
+          <Line x1={sx(da)} y1={padT} x2={sx(da)} y2={padT + plotH} stroke="#E5E7EB" strokeWidth={0.7} />
+          <SvgText x={sx(da)} y={padT + plotH + 14} fontSize={9} fill={COLORS.textMuted} textAnchor="middle">
+            {da / 1000}
+          </SvgText>
+        </G>
+      ))}
+      <Line x1={padL} y1={padT} x2={padL} y2={padT + plotH} stroke="#CBD5E1" strokeWidth={1.2} />
+      <Line x1={padL} y1={padT + plotH} x2={padL + plotW} y2={padT + plotH} stroke="#CBD5E1" strokeWidth={1.2} />
+      <Path d={d} stroke={COLORS.error} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      {currentDA != null && currentJPT != null && (
+        <>
+          <Line
+            x1={padL} y1={sy(currentJPT)} x2={sx(currentDA)} y2={sy(currentJPT)}
+            stroke={COLORS.primary} strokeWidth={1} strokeDasharray="4,3" opacity={0.8}
+          />
+          <Line
+            x1={sx(currentDA)} y1={padT + plotH} x2={sx(currentDA)} y2={sy(currentJPT)}
+            stroke={COLORS.primary} strokeWidth={1} strokeDasharray="4,3" opacity={0.8}
+          />
+          <Circle cx={sx(currentDA)} cy={sy(currentJPT)} r={5} fill="#fff" stroke={COLORS.primary} strokeWidth={2.5} />
+          <SvgText x={sx(currentDA) + 8} y={sy(currentJPT) - 8} fontSize={10} fill={COLORS.primary} fontWeight="bold">
+            {`${Math.round(auw)} kg`}
+          </SvgText>
+        </>
+      )}
+      <SvgText x={padL + plotW / 2} y={height - 2} fontSize={9} fill={COLORS.textMuted} textAnchor="middle">
+        Density Altitude (k ft)
+      </SvgText>
+    </Svg>
   );
 }
 
 // ── Calculator ────────────────────────────────────────────────────────────────
 export default function Calculator() {
   const router = useRouter();
-  const { aircraftDefaults, selectedAircraftId, inputs, setInputs, units, setUnit, outputs } = useAppState();
+  const {
+    aircraftDefaults, selectedAircraftId, inputs, setInputs, units, setUnit, outputs,
+    updateAircraftDefaults,
+  } = useAppState();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const aircraft = aircraftDefaults[selectedAircraftId];
   const isFit = outputs.status === 'FIT';
 
   const [saveOpen, setSaveOpen] = useState(false);
   const [reportName, setReportName] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
-  // ref avoids stale closures in speech event handlers (state would capture the initial null)
-  const activeVoiceFieldRef = useRef(null);
-  const [listeningField, setListeningField] = useState(null);
-  // voiceResult pushes the recognised value directly into the target InputRow's display
-  const [voiceResult, setVoiceResult] = useState(null); // { fieldKey, baseValue }
 
-  // Speech recognition events — must be called unconditionally (rules of hooks)
-  useSpeechRecognitionEvent('start', () => {});
-  useSpeechRecognitionEvent('end', () => {
-    activeVoiceFieldRef.current = null;
-    setListeningField(null);
-  });
-  useSpeechRecognitionEvent('error', (e) => {
-    activeVoiceFieldRef.current = null;
-    setListeningField(null);
-    Toast.show({ type: 'error', text1: 'Voice error', text2: e.message || 'Recognition failed', position: 'top' });
-  });
-  useSpeechRecognitionEvent('result', (e) => {
-    const transcript = e.results?.[0]?.transcript ?? '';
-    const m = transcript.match(/-?\d+(\.\d+)?/);
-    const fieldKey = activeVoiceFieldRef.current;
-    if (m && fieldKey) {
-      const f = WIZARD_FIELDS.find((x) => x.key === fieldKey);
-      if (f) {
-        const baseValue = toBaseUnit(parseFloat(m[0]), units[f.unitKey]);
-        setInputs({ [fieldKey]: baseValue });           // update AppState (outputs)
-        setVoiceResult({ fieldKey, baseValue });        // update InputRow display
-      }
-    }
-  });
+  // Screen-local unit toggles for the weight-breakdown fields — PPTX slide 7 mandates mixed
+  // Lb/Kg defaults (AC/Equipment/Copilot weight → Lb, Pilot weight → Kg). Shared with
+  // Default Settings only through the underlying kg value (aircraftDefaults), not the toggle.
+  const [basicWeightUnit, setBasicWeightUnit] = useState('lb');
+  const [equipmentWeightUnit, setEquipmentWeightUnit] = useState('lb');
+  const [pilotWeightUnit, setPilotWeightUnit] = useState('kg');
+  const [copilotWeightUnit, setCopilotWeightUnit] = useState('lb');
+  const [emptyWeightUnit, setEmptyWeightUnit] = useState('kg');
+  const [fuelMassUnit, setFuelMassUnit] = useState('kg');
 
-  const startVoice = async (fieldKey) => {
-    if (!nativeSpeechAvailable) {
-      Toast.show({ type: 'info', text1: 'Voice requires a dev build', text2: 'Use the keypad instead', position: 'top' });
-      return;
-    }
-    const { status } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-    if (status !== 'granted') {
-      Toast.show({ type: 'error', text1: 'Microphone permission denied', text2: 'Enable it in device Settings', position: 'top' });
-      return;
-    }
-    activeVoiceFieldRef.current = fieldKey;
-    setListeningField(fieldKey);
-    ExpoSpeechRecognitionModule.start({ lang: 'en-US', continuous: false, interimResults: false });
-  };
+  const chartWidth = Math.max(200, Math.min(width - (SPACING.lg + SPACING.md) * 2, 380));
 
-  // When aircraft changes: always reset aircraft-specific fields to the new aircraft's
-  // values (empty weight, fuel). Environmental and payload inputs persist — same sortie
-  // location, same crew, same load may be moved to a different airframe.
+  // When aircraft changes: reset session-level inputs to the new aircraft's defaults.
+  // Weight-breakdown fields (basic/equipment/pilot/copilot) live directly on aircraftDefaults
+  // and need no reset here — they already belong to the newly-selected aircraft.
   useEffect(() => {
     setInputs({
-      acWeight: aircraft.emptyWeight,
       fuel: aircraft.defaultFuel,
-      ...(inputs.elevation == null  && { elevation:       aircraft.defaultElevation }),
-      ...(inputs.qnh == null        && { qnh:             aircraft.defaultQNH }),
-      ...(inputs.temperature == null && { temperature:    aircraft.defaultTemp }),
-      ...(inputs.crewWeight == null  && { crewWeight:     aircraft.defaultCrew }),
-      ...(inputs.additionalLoad == null && { additionalLoad: aircraft.defaultAddLoad }),
-      ...(inputs.payload == null    && { payload:         aircraft.defaultPayload }),
+      ...(inputs.elevation == null && { elevation: aircraft.defaultElevation }),
+      ...(inputs.qnh == null && { qnh: aircraft.defaultQNH }),
+      ...(inputs.temperature == null && { temperature: aircraft.defaultTemp }),
+      ...(inputs.crewWeight == null && { crewWeight: aircraft.defaultCrew }),
+      ...(inputs.payload == null && { payload: aircraft.defaultPayload }),
     });
-  }, [selectedAircraftId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAircraftId]);
+
+  const patchAircraft = (patch) => {
+    updateAircraftDefaults({
+      ...aircraftDefaults,
+      [selectedAircraftId]: { ...aircraft, ...patch },
+    });
+  };
+
+  // Elevation is two-way synced with Default Settings (client PPTX): editing it here updates
+  // both the live session input AND the shared per-aircraft default.
+  const commitElevation = (v) => {
+    setInputs({ elevation: v });
+    patchAircraft({ defaultElevation: v });
+  };
 
   const doReset = () => {
     setInputs({
       elevation: aircraft.defaultElevation,
       qnh: aircraft.defaultQNH,
       temperature: aircraft.defaultTemp,
-      acWeight: aircraft.emptyWeight,
       crewWeight: aircraft.defaultCrew,
       fuel: aircraft.defaultFuel,
-      additionalLoad: aircraft.defaultAddLoad,
       payload: aircraft.defaultPayload,
     });
   };
@@ -228,22 +287,29 @@ export default function Calculator() {
     }
   };
 
+  const lowerLb = Math.round((aircraft.auwLowerThresholdKg ?? aircraft.mauw) * CONVERSIONS.kg_to_lb);
+  const upperLb = Math.round(aircraft.mauw * CONVERSIONS.kg_to_lb);
+
   return (
-    <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="calculator-screen">
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.hBtn}>
-          <ChevronLeft size={22} color={COLORS.text} />
+        <TouchableOpacity
+          onPress={() => setMenuOpen(true)}
+          style={styles.headerBtn}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          testID="open-menu-btn"
+        >
+          <Menu size={20} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.hTitle} numberOfLines={1}>{aircraft.name} — Hover Power</Text>
-        <View style={[styles.fitBadge, { backgroundColor: isFit ? COLORS.success : COLORS.error }]}>
-          {isFit
-            ? <CheckCircle2 size={13} color="#fff" />
-            : <AlertTriangle size={13} color="#fff" />}
-          <Text style={styles.fitText}>{isFit ? 'FIT' : 'NOT FIT'}</Text>
-        </View>
-        <TouchableOpacity onPress={() => setMenuOpen(true)} style={styles.hBtn}>
-          <Menu size={18} color={COLORS.textMuted} />
+        <Text style={styles.headerTitle}>HAL HPS</Text>
+        <TouchableOpacity
+          onPress={() => {}}
+          style={styles.micBtn}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          testID="header-mic-btn"
+        >
+          <Mic size={18} color={COLORS.error} />
         </TouchableOpacity>
       </View>
 
@@ -253,7 +319,14 @@ export default function Calculator() {
         contentContainerStyle={[styles.scroll, { paddingBottom: 24 + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
       >
-        {/* NOT FIT reasons */}
+        <View style={styles.titleRow}>
+          <Text style={styles.screenTitle}>{aircraft.name} — Hover Power Calculation</Text>
+          <View style={[styles.fitBadge, { backgroundColor: isFit ? COLORS.success : COLORS.error }]}>
+            {isFit ? <CheckCircle2 size={13} color="#fff" /> : <AlertTriangle size={13} color="#fff" />}
+            <Text style={styles.fitText}>{isFit ? 'FIT' : 'NOT FIT'}</Text>
+          </View>
+        </View>
+
         {!isFit && (
           <View style={styles.warnBanner}>
             <AlertTriangle size={14} color={COLORS.error} style={{ marginTop: 1 }} />
@@ -265,54 +338,141 @@ export default function Calculator() {
           </View>
         )}
 
+        <View style={styles.divider} />
+
         {/* ── INPUTS ── */}
-        <Text style={styles.sectionLabel}>INPUTS</Text>
-        <View style={styles.card}>
-          {WIZARD_FIELDS.map((field, i) => (
-            <InputRow
-              key={field.key}
-              field={field}
-              value={inputs[field.key]}
-              unit={units[field.unitKey]}
-              onCommit={(v) => setInputs({ [field.key]: v })}
-              onUnitChange={(u) => setUnit(field.unitKey, u)}
-              isLast={i === WIZARD_FIELDS.length - 1}
-              onVoice={() => startVoice(field.key)}
-              isListening={listeningField === field.key}
-              voiceValue={voiceResult?.fieldKey === field.key ? voiceResult.baseValue : null}
+        <View style={styles.grid}>
+          <View style={styles.row}>
+            <EditableCell
+              required label="Elevation" value={inputs.elevation} unit={units.altitude}
+              unitOptions={['ft', 'm']} onCommit={commitElevation}
+              onUnitChange={(u) => setUnit('altitude', u)} maxLength={5} testID="calc-elevation"
             />
-          ))}
+            <EditableCell
+              required label="QNH" value={inputs.qnh} unit={units.pressure}
+              unitOptions={['hPa', 'inHg']} onCommit={(v) => setInputs({ qnh: v })}
+              onUnitChange={(u) => setUnit('pressure', u)} maxLength={units.pressure === 'inHg' ? 3 : 4}
+              testID="calc-qnh"
+            />
+          </View>
+          <View style={styles.row}>
+            <EditableCell
+              required label="Temperature" value={inputs.temperature} unit={units.temperature}
+              unitOptions={['C', 'F']} onCommit={(v) => setInputs({ temperature: v })}
+              onUnitChange={(u) => setUnit('temperature', u)} maxLength={3} testID="calc-temperature"
+            />
+            <ReadOnlyCell
+              label="PA/Zp0" value={outputs.PA} unit={units.altitude} unitOptions={['ft', 'm']}
+              onUnitChange={(u) => setUnit('altitude', u)} testID="calc-pa"
+            />
+          </View>
+          <View style={styles.row}>
+            <EditableCell
+              required label="Aircraft Weight" value={aircraft.basicWeight} unit={basicWeightUnit}
+              unitOptions={['lb', 'kg']} onCommit={(v) => patchAircraft({ basicWeight: v })}
+              onUnitChange={setBasicWeightUnit} testID="calc-aircraft-weight"
+            />
+            <EditableCell
+              required label="Equipment Weight" value={aircraft.equipmentWeight} unit={equipmentWeightUnit}
+              unitOptions={['lb', 'kg']} onCommit={(v) => patchAircraft({ equipmentWeight: v })}
+              onUnitChange={setEquipmentWeightUnit} testID="calc-equipment-weight"
+            />
+          </View>
+          <View style={styles.row}>
+            <EditableCell
+              required label="Pilot Weight" value={aircraft.pilotWeight} unit={pilotWeightUnit}
+              unitOptions={['lb', 'kg']} onCommit={(v) => patchAircraft({ pilotWeight: v })}
+              onUnitChange={setPilotWeightUnit} testID="calc-pilot-weight"
+            />
+            <EditableCell
+              required label="Copilot Weight" value={aircraft.copilotWeight} unit={copilotWeightUnit}
+              unitOptions={['lb', 'kg']} onCommit={(v) => patchAircraft({ copilotWeight: v })}
+              onUnitChange={setCopilotWeightUnit} testID="calc-copilot-weight"
+            />
+          </View>
+          <View style={styles.row}>
+            <ReadOnlyCell
+              label="Empty Weight" value={outputs.EMPTY_WEIGHT} unit={emptyWeightUnit}
+              unitOptions={['lb', 'kg']} onUnitChange={setEmptyWeightUnit} testID="calc-empty-weight"
+            />
+            <EditableCell
+              required label="Passenger Weight" value={inputs.crewWeight} unit={units.weight}
+              unitOptions={['kg', 'lb']} onCommit={(v) => setInputs({ crewWeight: v })}
+              onUnitChange={(u) => setUnit('weight', u)} maxLength={3} testID="calc-passenger-weight"
+            />
+          </View>
+          <View style={styles.row}>
+            <EditableCell
+              label="Fuel" value={inputs.fuel} unit="L" unitOptions={['L']}
+              onCommit={(v) => setInputs({ fuel: v })} onUnitChange={() => {}}
+              maxLength={3} testID="calc-fuel-lt"
+            />
+            <ReadOnlyCell
+              label="Fuel" value={inputs.fuel} unit={fuelMassUnit} unitOptions={['kg', 'lb']}
+              onUnitChange={setFuelMassUnit} testID="calc-fuel-mass"
+            />
+          </View>
+          <View style={styles.row}>
+            <ReadOnlyCell
+              label="Max Power Available" value={outputs.POWER_AVAIL} suffix="shp" highlight
+              testID="calc-max-power-avail"
+            />
+            <EditableCell
+              required label="Load" value={inputs.payload} unit={units.weight}
+              unitOptions={['kg', 'lb']} onCommit={(v) => setInputs({ payload: v })}
+              onUnitChange={(u) => setUnit('weight', u)} maxLength={3} testID="calc-load"
+            />
+          </View>
         </View>
 
-        {/* ── OUTPUTS ── */}
-        <Text style={[styles.sectionLabel, { marginTop: SPACING.lg }]}>COMPUTED OUTPUTS</Text>
-        <View style={styles.card}>
-          <OutRow label="Pressure Altitude"  value={outputs.PA}           unit="ft"    />
-          <OutRow label="ISA Temperature"    value={outputs.ISA_TEMP}      unit="°C"    />
-          <OutRow label="Density Altitude"   value={outputs.DENSITY_ALT}   unit="ft"    warn={outputs.DENSITY_ALT > 18000} />
-          <OutRow label="All Up Weight"      value={outputs.AUW}            unit="kg"    warn={outputs.AUW > aircraft.mauw} />
-          <OutRow label="AUW Margin"         value={outputs.AUW_MARGIN}     unit="kg"    warn={outputs.AUW_MARGIN < 0} good={outputs.AUW_MARGIN >= 0} />
-          <OutRow label="Collective Avail"   value={outputs.COLLECTIVE_AVAIL}    unit="°"  />
-          <OutRow label="Collective Req"     value={outputs.COLLECTIVE_REQ}      unit="°"  />
-          <OutRow
-            label="Collective Headroom"
-            value={outputs.COLLECTIVE_BALANCE !== undefined ? `${outputs.COLLECTIVE_BALANCE >= 0 ? '+' : ''}${outputs.COLLECTIVE_BALANCE}°` : '—'}
-            warn={outputs.COLLECTIVE_BALANCE < 0}
-            good={outputs.COLLECTIVE_BALANCE >= 0}
-          />
-          <OutRow label="Payload Margin"     value={outputs.PAYLOAD_MARGIN} unit="kg"    />
-          <OutRow
-            label="JPT"
-            value={outputs.JPT ?? '—'}
-            unit="°C"
-            warn={outputs.JPT > (aircraft.jptMax ?? 870)}
-          />
-          <OutRow
-            label="Above ISA"
-            value={outputs.AB_TEMP}
-            unit="°C"
-            warn={outputs.AB_TEMP > 35}
-            isLast
+        <View style={styles.divider} />
+
+        {/* ── COMPUTE / RESULTS ── */}
+        <Text style={styles.sectionLabel}>COMPUTE / RESULTS</Text>
+        <View style={styles.grid}>
+          <View style={styles.row}>
+            <ReadOnlyCell
+              label="DA/Zd0" value={outputs.DENSITY_ALT} unit={units.altitude} unitOptions={['ft', 'm']}
+              onUnitChange={(u) => setUnit('altitude', u)} warn={outputs.DENSITY_ALT > 18000} testID="calc-da"
+            />
+            <ReadOnlyCell
+              label="All Up Weight" value={outputs.AUW} unit={units.weight} unitOptions={['kg', 'lb']}
+              onUnitChange={(u) => setUnit('weight', u)} warn={outputs.AUW > aircraft.mauw} testID="calc-auw"
+            />
+          </View>
+          <View style={styles.row}>
+            <ReadOnlyCell
+              label="Hover Power Required" value={outputs.POWER_REQ} suffix="shp" highlight
+              warn={outputs.POWER_REQ > outputs.POWER_AVAIL} testID="calc-power-req"
+            />
+            <ReadOnlyCell
+              label="JPT" value={outputs.JPT} unit={units.temperature} unitOptions={['C', 'F']}
+              onUnitChange={(u) => setUnit('temperature', u)} warn={outputs.JPT > (aircraft.jptMax ?? 870)}
+              testID="calc-jpt"
+            />
+          </View>
+          <View style={styles.row}>
+            <ReadOnlyCell
+              label={`Possible Payload For ${lowerLb}Lb`} value={outputs.POSSIBLE_PAYLOAD_LOWER}
+              unit={units.weight} unitOptions={['kg', 'lb']} onUnitChange={(u) => setUnit('weight', u)}
+              warn={outputs.POSSIBLE_PAYLOAD_LOWER < 0} testID="calc-payload-lower"
+            />
+            <ReadOnlyCell
+              label={`For ${upperLb}Lb`} value={outputs.POSSIBLE_PAYLOAD_UPPER}
+              unit={units.weight} unitOptions={['kg', 'lb']} onUnitChange={(u) => setUnit('weight', u)}
+              warn={outputs.POSSIBLE_PAYLOAD_UPPER < 0} testID="calc-payload-upper"
+            />
+          </View>
+        </View>
+
+        <View style={styles.divider} />
+
+        {/* ── JPT CALCULATION ON GRAPH ── */}
+        <Text style={styles.sectionLabel}>JPT CALCULATION ON GRAPH</Text>
+        <View style={styles.chartCard}>
+          <JPTGraph
+            aircraft={aircraft} abTemp={outputs.AB_TEMP} auw={outputs.AUW}
+            currentDA={outputs.DENSITY_ALT} currentJPT={outputs.JPT} width={chartWidth}
           />
         </View>
 
@@ -321,9 +481,8 @@ export default function Calculator() {
           style={[styles.actionBtn, styles.chartsBtn]}
           onPress={() => router.push('/results')}
         >
-          <BarChart2 style={styles.barChartIcon} size={16} color={COLORS.primaryDark} />
+          <BarChart2 size={16} color={COLORS.primaryDark} />
           <Text style={styles.chartsBtnText}>View Performance Charts</Text>
-          <ChevronLeft size={14} color={COLORS.primaryDark} style={{ transform: [{ rotate: '180deg' }] }} />
         </TouchableOpacity>
 
         <View style={styles.actionRow}>
@@ -381,15 +540,22 @@ const styles = StyleSheet.create({
 
   // Header
   header: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACING.sm,
-    paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm,
-    backgroundColor: COLORS.card, borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.lg, paddingVertical: SPACING.md,
+    backgroundColor: COLORS.primary, borderBottomLeftRadius: 20, borderBottomRightRadius: 20,
   },
-  hBtn: {
-    width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.bg,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border,
+  headerBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { flex: 1, textAlign: 'center', color: '#fff', fontWeight: '700', fontSize: 15 },
+  micBtn: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center', ...SHADOW,
   },
-  hTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: COLORS.text },
+
+  titleRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: SPACING.sm, marginTop: SPACING.md,
+  },
+  screenTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: COLORS.text },
   fitBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     borderRadius: RADIUS.pill, paddingHorizontal: 10, paddingVertical: 5,
@@ -398,58 +564,46 @@ const styles = StyleSheet.create({
 
   sectionLabel: {
     fontSize: 11, fontWeight: '800', color: COLORS.textMuted,
-    letterSpacing: 1, marginBottom: SPACING.sm,
+    letterSpacing: 1, marginBottom: SPACING.md,
   },
 
-  card: {
-    backgroundColor: COLORS.card, borderRadius: RADIUS.lg,
-    borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden', ...SHADOW,
-  },
+  divider: { height: 1, backgroundColor: COLORS.border, marginVertical: SPACING.lg },
 
-  // Input rows
-  inputRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: SPACING.lg, minHeight: 48,
+  grid: { gap: SPACING.lg },
+  row: { flexDirection: 'row', gap: SPACING.lg },
+  cell: { flex: 1, gap: SPACING.sm },
+  cellLabel: { fontSize: 12.5, fontWeight: '600', color: '#3F3F3F' },
+  cellLabelHighlight: { color: COLORS.primaryDark, fontWeight: '700' },
+  cellInputRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: SPACING.sm,
+    backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: RADIUS.md, height: 40, paddingHorizontal: SPACING.md, ...SHADOW,
   },
-  inputRowBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  inputLabel: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.text },
-  inputField: {
-    width: 80, textAlign: 'right', fontSize: 15, fontWeight: '700',
-    color: COLORS.primaryDark, borderBottomWidth: 1.5, borderBottomColor: COLORS.primary,
-    paddingVertical: 4, marginRight: SPACING.sm,
-  },
-  unitBtn: {
-    minWidth: 46, paddingHorizontal: 8, paddingVertical: 5,
-    borderRadius: RADIUS.sm, backgroundColor: COLORS.primaryLight,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  unitText: { fontSize: 12, fontWeight: '700', color: COLORS.primaryDark },
-  micBtn: {
-    width: 30, height: 30, borderRadius: 15, marginLeft: SPACING.sm,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: COLORS.bg, borderWidth: 1, borderColor: COLORS.border,
-  },
-  micBtnActive: { backgroundColor: COLORS.error, borderColor: COLORS.error },
+  cellInputRowHighlight: { borderColor: COLORS.primary, borderWidth: 1.5, backgroundColor: COLORS.primaryLight },
+  cellInputRowWarn: { borderColor: COLORS.error, borderWidth: 1.5 },
+  // "TO BE IN BLOCK/BIGGER FONT" (PPTX) — numeric values read as a bold "block" style.
+  cellInput: { flex: 1, fontSize: 16, fontWeight: '800', color: '#525252', padding: 0 },
+  cellInputStatic: { flex: 1, fontSize: 16, fontWeight: '800', color: '#525252' },
+  cellSuffix: { fontSize: 11, fontWeight: '500', color: COLORS.textMuted },
 
-  // Output rows
-  outRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACING.lg, paddingVertical: 11,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
-  },
-  outRowLast: { borderBottomWidth: 0 },
-  outLabel: { flex: 1, fontSize: 13, fontWeight: '500', color: COLORS.textMuted },
-  outValRow: { flexDirection: 'row', alignItems: 'baseline' },
-  outValue: { fontSize: 15, fontWeight: '800' },
-  outUnit: { fontSize: 11, fontWeight: '500', color: COLORS.textMuted },
+  unitPill: { flexDirection: 'row', backgroundColor: COLORS.primaryLight, borderRadius: 4, padding: 2 },
+  unitSeg: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 3 },
+  unitSegActive: { backgroundColor: COLORS.primaryDark },
+  unitSegText: { fontSize: 10, fontWeight: '600', color: COLORS.primaryDark },
+  unitSegTextActive: { color: '#fff' },
 
   // Warning banner
   warnBanner: {
     flexDirection: 'row', gap: SPACING.sm, alignItems: 'flex-start',
     backgroundColor: COLORS.errorBg, borderRadius: RADIUS.md, padding: SPACING.md,
-    borderWidth: 1, borderColor: COLORS.error, marginBottom: SPACING.md,
+    borderWidth: 1, borderColor: COLORS.error, marginTop: SPACING.md,
   },
   warnText: { fontSize: 12, color: COLORS.error, fontWeight: '600', lineHeight: 18 },
+
+  chartCard: {
+    backgroundColor: COLORS.card, borderRadius: RADIUS.md,
+    borderWidth: 1, borderColor: 'rgba(13,144,184,0.25)', padding: SPACING.md, alignItems: 'center',
+  },
 
   // Action buttons
   chartsBtn: {
@@ -457,7 +611,6 @@ const styles = StyleSheet.create({
     gap: SPACING.sm, paddingVertical: 14, borderRadius: RADIUS.md, marginTop: SPACING.lg,
     backgroundColor: COLORS.primaryLight, borderWidth: 1.5, borderColor: COLORS.primary,
   },
-  barChartIcon: { alignSelf: 'center' },
   chartsBtnText: { textAlign: 'center', color: COLORS.primaryDark, fontWeight: '800', fontSize: 14 },
   actionRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
   actionBtn: {

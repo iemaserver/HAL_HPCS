@@ -40,6 +40,7 @@ export const AppStateProvider = ({ children }) => {
     fuel: null,
     additionalLoad: null,
     payload: null,
+    cruisePower: null, // shp — Performance Data (Max Level Flight Speed) screen only
   });
 
   useEffect(() => {
@@ -96,6 +97,7 @@ export const AppStateProvider = ({ children }) => {
       fuel: null,
       additionalLoad: null,
       payload: null,
+      cruisePower: null,
     });
   };
 
