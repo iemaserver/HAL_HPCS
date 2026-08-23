@@ -32,6 +32,24 @@ export default function Airframe() {
   const { aircraftDefaults, selectedAircraftId, setSelectedAircraftId } = useAppState();
   const [menuOpen, setMenuOpen] = useState(false);
   const tapTimeoutRef = useRef(null);
+  // Guards against BOTH timers below ever firing a navigation: Expo Router's native
+  // stack keeps a pushed-from screen mounted in the background (it isn't unmounted
+  // just because you navigated away), so its timers keep running. Without this guard,
+  // a tap could fire its 350ms push while the 2s idle timer — started earlier and
+  // still alive underneath — later fires too, stacking a second (or third, across
+  // repeated selection changes) copy of /calculator on the nav stack. Every
+  // navigation path below checks-and-sets this ref first, so only the first one to
+  // fire actually navigates.
+  const navigatedRef = useRef(false);
+
+  const goToCalculator = () => {
+    if (navigatedRef.current) return;
+    navigatedRef.current = true;
+    // replace (not push): this screen shouldn't remain on the stack under the
+    // calculator, and replace can't accumulate duplicate instances even if this
+    // somehow ran more than once.
+    router.replace('/calculator');
+  };
 
   // Client spec (slide 5): "PREVIOUSLY SELECTED AC OR CHETAK SHOULD BE AUTO
   // SELECTED" + "IF NO CHANGE WITHIN 2 SEC THE PAGE SHOULD GO TO HOVER CALCULATION
@@ -40,14 +58,11 @@ export default function Airframe() {
   // to 'chetak' in AppState). The timer (re)starts on mount and every time the
   // selection changes, so idling on a newly-selected card still gets its own full
   // 2 seconds. It is a separate, longer mechanism from the tap-driven fast path
-  // below: an active tap navigates (and unmounts this screen) well before 2s
-  // elapses, and this effect's cleanup then clears the pending idle timeout so it
-  // can never fire late against a screen the user has already left.
+  // below — `navigatedRef` above ensures only one of the two ever actually navigates.
   useEffect(() => {
-    const idleTimeout = setTimeout(() => {
-      router.push('/calculator');
-    }, 2000);
+    const idleTimeout = setTimeout(goToCalculator, 2000);
     return () => clearTimeout(idleTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAircraftId]);
 
   // Belt-and-suspenders cleanup for the tap-driven timer (below): on unmount,
@@ -71,9 +86,7 @@ export default function Airframe() {
   const selectAndAdvance = (id) => {
     setSelectedAircraftId(id);
     if (tapTimeoutRef.current) clearTimeout(tapTimeoutRef.current);
-    tapTimeoutRef.current = setTimeout(() => {
-      router.push('/calculator');
-    }, 350);
+    tapTimeoutRef.current = setTimeout(goToCalculator, 350);
   };
 
   return (
