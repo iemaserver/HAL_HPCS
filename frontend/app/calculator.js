@@ -18,6 +18,7 @@ import {
 } from '../src/constants/logic';
 import { insertReport, getDeviceId } from '../src/services/database';
 import { generateAndSharePdf } from '../src/utils/pdf';
+import { useVoiceFieldControl } from '../src/hooks/useVoiceFieldControl';
 
 const pad = (n) => String(n).padStart(2, '0');
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -287,6 +288,78 @@ export default function Calculator() {
     }
   };
 
+  // ── Voice control (header mic) — "say a field, then say a number" (PPTX slide 4) ──
+  // Each field's unit mirrors what its EditableCell currently displays, so the number
+  // the user speaks (read off the screen) is converted the same way EditableCell's own
+  // commit() does before reaching the same setters used by the on-screen inputs.
+  const voiceFields = [
+    { key: 'elevation', label: 'Elevation', aliases: ['altitude'] },
+    { key: 'qnh', label: 'QNH', aliases: ['q n h', 'pressure', 'qnh'] },
+    { key: 'temperature', label: 'Temperature', aliases: ['temp'] },
+    {
+      key: 'aircraftWeight', label: 'Aircraft Weight', aliases: ['basic weight', 'aircraft'],
+    },
+    { key: 'equipmentWeight', label: 'Equipment Weight', aliases: ['equipment'] },
+    { key: 'pilotWeight', label: 'Pilot Weight', aliases: ['pilot'] },
+    {
+      key: 'copilotWeight', label: 'Copilot Weight', aliases: ['co-pilot weight', 'co pilot weight', 'copilot'],
+    },
+    {
+      key: 'passengerWeight', label: 'Passenger Weight', aliases: ['passenger', 'pax weight', 'crew weight'],
+    },
+    { key: 'fuel', label: 'Fuel', aliases: ['fuel liters', 'fuel litres'] },
+    { key: 'load', label: 'Load', aliases: ['payload', 'load weight'] },
+  ];
+
+  const voiceOptions = [
+    { key: 'save', label: 'Save', onSelect: openSave },
+    { key: 'share', label: 'Share PDF', onSelect: doShare },
+    { key: 'reset', label: 'Reset', onSelect: doReset },
+  ];
+
+  const onCommitValue = (key, n) => {
+    switch (key) {
+      case 'elevation':
+        commitElevation(toBaseUnit(n, units.altitude));
+        break;
+      case 'qnh':
+        setInputs({ qnh: toBaseUnit(n, units.pressure) });
+        break;
+      case 'temperature':
+        setInputs({ temperature: toBaseUnit(n, units.temperature) });
+        break;
+      case 'aircraftWeight':
+        patchAircraft({ basicWeight: toBaseUnit(n, basicWeightUnit) });
+        break;
+      case 'equipmentWeight':
+        patchAircraft({ equipmentWeight: toBaseUnit(n, equipmentWeightUnit) });
+        break;
+      case 'pilotWeight':
+        patchAircraft({ pilotWeight: toBaseUnit(n, pilotWeightUnit) });
+        break;
+      case 'copilotWeight':
+        patchAircraft({ copilotWeight: toBaseUnit(n, copilotWeightUnit) });
+        break;
+      case 'passengerWeight':
+        setInputs({ crewWeight: toBaseUnit(n, units.weight) });
+        break;
+      case 'fuel':
+        // Fuel's EditableCell has unit="L" (truthy), so its own commit() already runs
+        // toBaseUnit(n, 'L') before calling setInputs({ fuel: v }) — mirror that exactly.
+        setInputs({ fuel: toBaseUnit(n, 'L') });
+        break;
+      case 'load':
+        setInputs({ payload: toBaseUnit(n, units.weight) });
+        break;
+      default:
+        break;
+    }
+  };
+
+  const {
+    listening, activeFieldKey, toggle: toggleVoice,
+  } = useVoiceFieldControl({ fields: voiceFields, options: voiceOptions, onCommitValue });
+
   const lowerLb = Math.round((aircraft.auwLowerThresholdKg ?? aircraft.mauw) * CONVERSIONS.kg_to_lb);
   const upperLb = Math.round(aircraft.mauw * CONVERSIONS.kg_to_lb);
 
@@ -304,12 +377,12 @@ export default function Calculator() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>HAL HPS</Text>
         <TouchableOpacity
-          onPress={() => {}}
-          style={styles.micBtn}
+          onPress={toggleVoice}
+          style={[styles.micBtn, listening && styles.micBtnActive]}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           testID="header-mic-btn"
         >
-          <Mic size={18} color={COLORS.error} />
+          <Mic size={18} color={listening ? '#fff' : COLORS.error} />
         </TouchableOpacity>
       </View>
 
@@ -347,12 +420,13 @@ export default function Calculator() {
               required label="Elevation" value={inputs.elevation} unit={units.altitude}
               unitOptions={['ft', 'm']} onCommit={commitElevation}
               onUnitChange={(u) => setUnit('altitude', u)} maxLength={5} testID="calc-elevation"
+              highlight={activeFieldKey === 'elevation'}
             />
             <EditableCell
               required label="QNH" value={inputs.qnh} unit={units.pressure}
               unitOptions={['hPa', 'inHg']} onCommit={(v) => setInputs({ qnh: v })}
               onUnitChange={(u) => setUnit('pressure', u)} maxLength={units.pressure === 'inHg' ? 3 : 4}
-              testID="calc-qnh"
+              testID="calc-qnh" highlight={activeFieldKey === 'qnh'}
             />
           </View>
           <View style={styles.row}>
@@ -360,6 +434,7 @@ export default function Calculator() {
               required label="Temperature" value={inputs.temperature} unit={units.temperature}
               unitOptions={['C', 'F']} onCommit={(v) => setInputs({ temperature: v })}
               onUnitChange={(u) => setUnit('temperature', u)} maxLength={3} testID="calc-temperature"
+              highlight={activeFieldKey === 'temperature'}
             />
             <ReadOnlyCell
               label="PA/Zp0" value={outputs.PA} unit={units.altitude} unitOptions={['ft', 'm']}
@@ -371,11 +446,13 @@ export default function Calculator() {
               required label="Aircraft Weight" value={aircraft.basicWeight} unit={basicWeightUnit}
               unitOptions={['lb', 'kg']} onCommit={(v) => patchAircraft({ basicWeight: v })}
               onUnitChange={setBasicWeightUnit} testID="calc-aircraft-weight"
+              highlight={activeFieldKey === 'aircraftWeight'}
             />
             <EditableCell
               required label="Equipment Weight" value={aircraft.equipmentWeight} unit={equipmentWeightUnit}
               unitOptions={['lb', 'kg']} onCommit={(v) => patchAircraft({ equipmentWeight: v })}
               onUnitChange={setEquipmentWeightUnit} testID="calc-equipment-weight"
+              highlight={activeFieldKey === 'equipmentWeight'}
             />
           </View>
           <View style={styles.row}>
@@ -383,11 +460,13 @@ export default function Calculator() {
               required label="Pilot Weight" value={aircraft.pilotWeight} unit={pilotWeightUnit}
               unitOptions={['lb', 'kg']} onCommit={(v) => patchAircraft({ pilotWeight: v })}
               onUnitChange={setPilotWeightUnit} testID="calc-pilot-weight"
+              highlight={activeFieldKey === 'pilotWeight'}
             />
             <EditableCell
               required label="Copilot Weight" value={aircraft.copilotWeight} unit={copilotWeightUnit}
               unitOptions={['lb', 'kg']} onCommit={(v) => patchAircraft({ copilotWeight: v })}
               onUnitChange={setCopilotWeightUnit} testID="calc-copilot-weight"
+              highlight={activeFieldKey === 'copilotWeight'}
             />
           </View>
           <View style={styles.row}>
@@ -399,13 +478,14 @@ export default function Calculator() {
               required label="Passenger Weight" value={inputs.crewWeight} unit={units.weight}
               unitOptions={['kg', 'lb']} onCommit={(v) => setInputs({ crewWeight: v })}
               onUnitChange={(u) => setUnit('weight', u)} maxLength={3} testID="calc-passenger-weight"
+              highlight={activeFieldKey === 'passengerWeight'}
             />
           </View>
           <View style={styles.row}>
             <EditableCell
               label="Fuel" value={inputs.fuel} unit="L" unitOptions={['L']}
               onCommit={(v) => setInputs({ fuel: v })} onUnitChange={() => {}}
-              maxLength={3} testID="calc-fuel-lt"
+              maxLength={3} testID="calc-fuel-lt" highlight={activeFieldKey === 'fuel'}
             />
             <ReadOnlyCell
               label="Fuel" value={inputs.fuel} unit={fuelMassUnit} unitOptions={['kg', 'lb']}
@@ -421,6 +501,7 @@ export default function Calculator() {
               required label="Load" value={inputs.payload} unit={units.weight}
               unitOptions={['kg', 'lb']} onCommit={(v) => setInputs({ payload: v })}
               onUnitChange={(u) => setUnit('weight', u)} maxLength={3} testID="calc-load"
+              highlight={activeFieldKey === 'load'}
             />
           </View>
         </View>
@@ -550,6 +631,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
     alignItems: 'center', justifyContent: 'center', ...SHADOW,
   },
+  micBtnActive: { backgroundColor: COLORS.error },
 
   titleRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

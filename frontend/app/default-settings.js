@@ -9,6 +9,70 @@ import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
 import AppMenu from '../src/components/AppMenu';
 import { fromBaseUnit, toBaseUnit, buildAltitudeTempTable } from '../src/constants/logic';
+import { useVoiceFieldControl } from '../src/hooks/useVoiceFieldControl';
+
+// ── Voice control: field registry (label/aliases only — unit-aware conversion happens
+// in onCommitValue below, mirroring each EditableCell's own onCommit logic). ──
+const VOICE_FIELDS = [
+  { key: 'defaultElevation', label: 'Elevation', aliases: ['altitude', 'field elevation', 'default elevation'] },
+  { key: 'basicWeight', label: 'Basic Weight', aliases: ['aircraft weight', 'basic wt'] },
+  { key: 'pilotWeight', label: 'Pilot Weight', aliases: ['pilot wt'] },
+  {
+    key: 'copilotWeight',
+    label: 'Copilot Weight',
+    aliases: ['co-pilot weight', 'co pilot weight', 'copilot wt'],
+  },
+  { key: 'equipmentWeight', label: 'Equipment Weight', aliases: ['equipment wt'] },
+  {
+    key: 'ageingCoefficient',
+    label: 'Ageing Coefficient',
+    aliases: ['aging coefficient', 'ageing', 'aging'],
+  },
+  {
+    key: 'jptCorrection',
+    label: 'JPT Correction',
+    aliases: ['jpt', 'correction', 'j p t correction', 'jpt correction factor'],
+  },
+  { key: 'defaultQNH', label: 'QNH', aliases: ['q n h', 'pressure', 'qnh setting'] },
+  { key: 'defaultTemp', label: 'Temperature', aliases: ['temp', 'outside air temperature'] },
+  {
+    key: 'zp0',
+    label: 'ZP0 (PA)',
+    aliases: ['z p zero', 'zp zero', 'pressure altitude', 'z p naught', 'pa'],
+  },
+  { key: 't0', label: 'T0 (Temp/OAT)', aliases: ['t zero', 'oat', 'temp oat', 't naught'] },
+  { key: 'zSigma1', label: 'Zσ1', aliases: ['z sigma one', 'zsigma1', 'z sigma 1'] },
+  { key: 'zSigma2', label: 'Zσ2', aliases: ['z sigma two', 'zsigma2', 'z sigma 2'] },
+  { key: 'zSigma3', label: 'Zσ3', aliases: ['z sigma three', 'zsigma3', 'z sigma 3'] },
+  { key: 'zSigma4', label: 'Zσ4', aliases: ['z sigma four', 'zsigma4', 'z sigma 4'] },
+  { key: 'dTheta1', label: 'Dθ1', aliases: ['d theta one', 'dtheta1', 'd theta 1'] },
+  { key: 'dTheta2', label: 'Dθ2', aliases: ['d theta two', 'dtheta2', 'd theta 2'] },
+  { key: 'dTheta3', label: 'Dθ3', aliases: ['d theta three', 'dtheta3', 'd theta 3'] },
+  { key: 'dTheta4', label: 'Dθ4', aliases: ['d theta four', 'dtheta4', 'd theta 4'] },
+];
+
+// Fields that only render on one of the two pages — saying their name auto-navigates
+// there before committing. zp0/t0 are editable on BOTH pages so they're omitted here
+// (no forced switch needed either way).
+const VOICE_FIELD_PAGE = {
+  defaultElevation: 1,
+  basicWeight: 1,
+  pilotWeight: 1,
+  copilotWeight: 1,
+  equipmentWeight: 1,
+  ageingCoefficient: 1,
+  jptCorrection: 1,
+  defaultQNH: 1,
+  defaultTemp: 1,
+  zSigma1: 2,
+  zSigma2: 2,
+  zSigma3: 2,
+  zSigma4: 2,
+  dTheta1: 2,
+  dTheta2: 2,
+  dTheta3: 2,
+  dTheta4: 2,
+};
 
 // Display labels — PPTX slide 7 explicitly spells these as "mb" / "mmHg", not the generic
 // hPa/inHg codes the rest of the app uses internally (numerically identical: 1 hPa = 1 mb).
@@ -152,6 +216,85 @@ export default function DefaultSettings() {
   const goAC = () => router.push('/airframe');
   const goCalc = () => router.push('/calculator');
 
+  // Voice control: a matched field's spoken number is in whatever unit is currently
+  // DISPLAYED for that field — convert to base units exactly like each EditableCell's
+  // own onCommit does before storing.
+  const onCommitValue = (key, raw) => {
+    const targetPage = VOICE_FIELD_PAGE[key];
+    if (targetPage && targetPage !== page) setPage(targetPage);
+
+    switch (key) {
+      case 'defaultElevation':
+        commitElevation(toBaseUnit(raw, units.altitude));
+        break;
+      case 'basicWeight':
+        patchAircraft({ basicWeight: toBaseUnit(raw, basicWeightUnit) });
+        break;
+      case 'pilotWeight':
+        patchAircraft({ pilotWeight: toBaseUnit(raw, pilotWeightUnit) });
+        break;
+      case 'copilotWeight':
+        patchAircraft({ copilotWeight: toBaseUnit(raw, copilotWeightUnit) });
+        break;
+      case 'equipmentWeight':
+        patchAircraft({ equipmentWeight: toBaseUnit(raw, equipmentWeightUnit) });
+        break;
+      case 'ageingCoefficient':
+        patchAircraft({ ageingCoefficient: toBaseUnit(raw, ageingUnit) });
+        break;
+      case 'jptCorrection':
+        patchAircraft({ jptCorrection: toBaseUnit(raw, jptCorrUnit) });
+        break;
+      case 'defaultQNH':
+        patchAircraft({ defaultQNH: toBaseUnit(raw, units.pressure) });
+        break;
+      case 'defaultTemp':
+        patchAircraft({ defaultTemp: toBaseUnit(raw, units.temperature) });
+        break;
+      case 'zp0':
+        patchAircraft({ zp0: toBaseUnit(raw, zp0Unit) });
+        break;
+      case 't0':
+        patchAircraft({ t0: toBaseUnit(raw, t0Unit) });
+        break;
+      case 'zSigma1':
+      case 'zSigma2':
+      case 'zSigma3':
+      case 'zSigma4':
+        patchAircraft({ [key]: toBaseUnit(raw, zSigmaUnit) });
+        break;
+      case 'dTheta1':
+      case 'dTheta2':
+      case 'dTheta3':
+      case 'dTheta4':
+        // Dθ fields carry no unit toggle (unit={null} in the JSX below) — pass through raw.
+        patchAircraft({ [key]: raw });
+        break;
+      default:
+        break;
+    }
+  };
+
+  // "next page" / "previous page" as a trivial nice-to-have alongside field voice control.
+  const voiceOptions = [
+    {
+      key: 'voice-next-page',
+      label: 'next page',
+      aliases: ['page two', 'go to page two', 'second page'],
+      onSelect: () => setPage(2),
+    },
+    {
+      key: 'voice-prev-page',
+      label: 'previous page',
+      aliases: ['page one', 'go to page one', 'first page', 'back'],
+      onSelect: () => setPage(1),
+    },
+  ];
+
+  const { listening, toggle } = useVoiceFieldControl({
+    fields: VOICE_FIELDS, options: voiceOptions, onCommitValue,
+  });
+
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="default-settings-screen">
       {/* Header */}
@@ -166,12 +309,12 @@ export default function DefaultSettings() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>HAL HPS</Text>
         <TouchableOpacity
-          onPress={() => {}}
-          style={styles.micBtn}
+          onPress={toggle}
+          style={[styles.micBtn, listening && styles.micBtnActive]}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           testID="header-mic-btn"
         >
-          <Mic size={18} color={COLORS.error} />
+          <Mic size={18} color={listening ? '#fff' : COLORS.error} />
         </TouchableOpacity>
       </View>
 
@@ -359,6 +502,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
     alignItems: 'center', justifyContent: 'center', ...SHADOW,
   },
+  micBtnActive: { backgroundColor: COLORS.error },
 
   titleRow: {
     flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',

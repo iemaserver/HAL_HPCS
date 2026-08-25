@@ -6,6 +6,7 @@ import { Menu, Mic, Settings, CheckSquare } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
 import AppMenu from '../src/components/AppMenu';
+import { useVoiceFieldControl } from '../src/hooks/useVoiceFieldControl';
 
 const HELI_IMG = {
   chetak:  require('../assets/images/Chetak-1.png'),
@@ -89,6 +90,24 @@ export default function Airframe() {
     tapTimeoutRef.current = setTimeout(goToCalculator, 350);
   };
 
+  // Client spec (slide 4): pressing the mic starts continuous listening; saying a
+  // button's label selects/triggers it directly. This screen has no numeric fields —
+  // it's pure button-selection — so only `options` (no `fields`) is needed.
+  const { listening, toggle } = useVoiceFieldControl({
+    fields: [],
+    options: [
+      { key: 'chetak', label: 'chetak', onSelect: () => selectAndAdvance('chetak') },
+      { key: 'cheetah', label: 'cheetah', onSelect: () => selectAndAdvance('cheetah') },
+      { key: 'cheetal', label: 'cheetal', onSelect: () => selectAndAdvance('cheetal') },
+      {
+        key: 'default-settings',
+        label: 'default settings',
+        aliases: ['settings', 'defaults'],
+        onSelect: () => router.push('/default-settings'),
+      },
+    ],
+  });
+
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="airframe-screen">
       <View style={styles.header}>
@@ -104,12 +123,14 @@ export default function Airframe() {
         <Text style={styles.headerTitle}>HAL HPS</Text>
 
         <TouchableOpacity
-          style={styles.micBtn}
-          // TODO: voice interaction — spec unclear (no interaction defined in Figma), stubbed as no-op
-          onPress={() => {}}
+          style={[styles.micBtn, listening && styles.micBtnActive]}
+          // Wired to useVoiceFieldControl: press to toggle continuous listening;
+          // saying an airframe name or "default settings" selects/triggers it.
+          onPress={toggle}
           testID="airframe-mic-btn"
         >
           <Mic size={20} color="#fff" />
+          {listening && <View style={styles.micPulseDot} />}
         </TouchableOpacity>
       </View>
       <AppMenu visible={menuOpen} onClose={() => setMenuOpen(false)} />
@@ -198,6 +219,22 @@ const styles = StyleSheet.create({
     backgroundColor: FIGMA.mic,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  micBtnActive: {
+    backgroundColor: FIGMA.headerBlue,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  micPulseDot: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: FIGMA.mic,
+    borderWidth: 1,
+    borderColor: '#fff',
   },
 
   scrollContent: { padding: SPACING.lg, paddingBottom: SPACING.xxl },

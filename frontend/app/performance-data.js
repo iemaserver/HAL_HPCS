@@ -13,6 +13,7 @@ import {
   fromBaseUnit, toBaseUnit, CONVERSIONS,
   computeVmaxKnots, computeROCFpm, buildPerformanceCurves, computeCurrentPerfPoint,
 } from '../src/constants/logic';
+import { useVoiceFieldControl } from '../src/hooks/useVoiceFieldControl';
 
 const HELI_IMG = {
   chetak: require('../assets/images/Chetak-1.png'),
@@ -126,6 +127,67 @@ export default function PerformanceData() {
 
   const aircraft = aircraftDefaults[selectedAircraftId];
 
+  // ── Voice control (header mic) — "say a field, then say a number" (PPTX slide 4) ──
+  // Each field's unit mirrors what its EditableCell currently displays, so the number
+  // the user speaks (read off the screen) is converted the same way EditableCell's own
+  // commit() does before reaching the same setters used by the on-screen inputs.
+  // "Cruise Power" only exists while the vmax tab is active, so it's only offered then —
+  // this array is rebuilt fresh every render, so the hook always sees the current tab.
+  const voiceFields = [
+    { key: 'elevation', label: 'Elevation', aliases: ['altitude'] },
+    { key: 'qnh', label: 'QNH', aliases: ['q n h', 'pressure'] },
+    { key: 'temperature', label: 'Temperature', aliases: ['temp'] },
+    { key: 'load', label: 'Load', aliases: ['payload', 'load weight'] },
+    {
+      key: 'passengerWeight', label: 'Passenger Weight', aliases: ['passenger', 'pax weight', 'crew weight'],
+    },
+    { key: 'fuel', label: 'Fuel', aliases: ['fuel liters', 'fuel litres'] },
+    ...(metric === 'vmax'
+      ? [{ key: 'cruisePower', label: 'Cruise Power', aliases: ['cruise', 'cruising power'] }]
+      : []),
+  ];
+
+  const voiceOptions = [
+    { key: 'vmax', label: 'Max Level Flight Speed', aliases: ['level flight speed', 'max speed', 'vmax'], onSelect: () => setMetric('vmax') },
+    { key: 'roc', label: 'Rate of Climb', aliases: ['climb rate', 'roc'], onSelect: () => setMetric('roc') },
+  ];
+
+  const onCommitValue = (key, n) => {
+    switch (key) {
+      case 'elevation':
+        setInputs({ elevation: toBaseUnit(n, units.altitude) });
+        break;
+      case 'qnh':
+        setInputs({ qnh: toBaseUnit(n, units.pressure) });
+        break;
+      case 'temperature':
+        setInputs({ temperature: toBaseUnit(n, units.temperature) });
+        break;
+      case 'load':
+        setInputs({ payload: toBaseUnit(n, units.weight) });
+        break;
+      case 'passengerWeight':
+        setInputs({ crewWeight: toBaseUnit(n, units.weight) });
+        break;
+      case 'fuel':
+        // Fuel's EditableCell has unit="L" (truthy), so its own commit() already runs
+        // toBaseUnit(n, 'L') before calling setInputs({ fuel: v }) — mirror that exactly.
+        setInputs({ fuel: toBaseUnit(n, 'L') });
+        break;
+      case 'cruisePower':
+        // unit="shp" isn't in toBaseUnit's switch, so it falls through to the default
+        // (identity) case — same as its EditableCell's own commit() would do.
+        setInputs({ cruisePower: toBaseUnit(n, 'shp') });
+        break;
+      default:
+        break;
+    }
+  };
+
+  const { listening, toggle: toggleVoice } = useVoiceFieldControl({
+    fields: voiceFields, options: voiceOptions, onCommitValue,
+  });
+
   const curves = useMemo(() => buildPerformanceCurves(aircraft, metric), [aircraft, metric]);
   const currentPoint = useMemo(
     () => computeCurrentPerfPoint(aircraft, outputs.DENSITY_ALT, outputs.AUW, metric),
@@ -154,12 +216,12 @@ export default function PerformanceData() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>HAL HPS</Text>
         <TouchableOpacity
-          onPress={() => {}}
-          style={styles.micBtn}
+          onPress={toggleVoice}
+          style={[styles.micBtn, listening && styles.micBtnActive]}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           testID="header-mic-btn"
         >
-          <Mic size={18} color={COLORS.error} />
+          <Mic size={18} color={listening ? '#fff' : COLORS.error} />
         </TouchableOpacity>
       </View>
 
@@ -318,6 +380,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
     alignItems: 'center', justifyContent: 'center', ...SHADOW,
   },
+  micBtnActive: { backgroundColor: COLORS.error },
 
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, marginTop: SPACING.md },
   badge: {
