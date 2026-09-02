@@ -10,6 +10,8 @@ export const COLORS = {
   successBg: '#DCFCE7',
   error: '#EF4444',
   errorBg: '#FEE2E2',
+  warning: '#D97706',
+  warningBg: '#FEF3C7',
   border: '#E2E8F0',
   dark: '#0F172A',
 };

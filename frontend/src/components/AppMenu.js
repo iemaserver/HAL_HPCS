@@ -50,9 +50,10 @@ const NAV_ITEMS = [
       {
         key: 'autorotation-rpm',
         label: 'RPM in Autorotation',
-        // No formula yet — explicitly deferred, waiting on flight-manual data from the user.
-        disabled: true,
-        comingSoon: true,
+        route: '/performance-data',
+        params: { metric: 'autorotation-rpm' },
+        // TASK-99: wired to an unverified placeholder model (see logic.js) — no client
+        // formula/chart exists yet. Screen itself carries a prominent "unverified" notice.
       },
     ],
   },
@@ -76,7 +77,7 @@ const NAV_ITEMS = [
   {
     key: 'references',
     label: 'References',
-    desc: 'Manuals, formulas & source data',
+    desc: 'Certified flight manuals & source data',
     route: '/references',
     Icon: BookOpen,
   },

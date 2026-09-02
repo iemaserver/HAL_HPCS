@@ -2,7 +2,9 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Line, Path, Circle, Text as SvgText, G } from 'react-native-svg';
 import { COLORS } from '../constants/theme';
-import { CHART_DA_MAX, CHART_VMAX_MIN, CHART_VMAX_MAX, CHART_ROC_MAX } from '../constants/logic';
+import {
+  CHART_DA_MAX, CHART_VMAX_MIN, CHART_VMAX_MAX, CHART_ROC_MAX, CHART_RPM_MIN, CHART_RPM_MAX,
+} from '../constants/logic';
 
 // Gray shades from lightest AUW (top) to heaviest (bottom)
 const CURVE_COLORS = ['#CBD5E1', '#94A3B8', '#64748B', '#475569', '#1E293B'];
@@ -13,7 +15,7 @@ const DA_TICKS = [0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000, 
  * PerformanceChart — aircraft-specific SVG chart
  *
  * Props:
- *   type        'vmax' | 'roc'
+ *   type        'vmax' | 'roc' | 'autorotation-rpm'
  *   curves      [{auw, points:[{da, value}]}]  — reference AUW lines
  *   current     {da, value}                    — current operating point
  *   width       number
@@ -24,14 +26,14 @@ export default function PerformanceChart({ type, curves = [], current, width = 3
   const plotW = width - padL - padR;
   const plotH = height - padT - padB;
 
-  const xMin = type === 'vmax' ? CHART_VMAX_MIN : 0;
-  const xMax = type === 'vmax' ? CHART_VMAX_MAX : CHART_ROC_MAX;
+  const xMin = type === 'vmax' ? CHART_VMAX_MIN : type === 'autorotation-rpm' ? CHART_RPM_MIN : 0;
+  const xMax = type === 'vmax' ? CHART_VMAX_MAX : type === 'autorotation-rpm' ? CHART_RPM_MAX : CHART_ROC_MAX;
   const xRange = xMax - xMin;
 
   const sx = (v) => padL + ((v - xMin) / xRange) * plotW;
   const sy = (da) => padT + (1 - da / CHART_DA_MAX) * plotH;
 
-  const xTickStep = type === 'vmax' ? 10 : 250;
+  const xTickStep = type === 'vmax' ? 10 : type === 'autorotation-rpm' ? 10 : 250;
   const xTicks = [];
   for (let v = xMin; v <= xMax; v += xTickStep) xTicks.push(v);
 
@@ -127,7 +129,7 @@ export default function PerformanceChart({ type, curves = [], current, width = 3
               y={sy(current.da) - 8}
               fontSize={10.5} fill={COLORS.primary} fontWeight="bold"
             >
-              {`${current.value} ${type === 'vmax' ? 'kts' : 'fpm'}`}
+              {`${current.value} ${type === 'vmax' ? 'kts' : type === 'autorotation-rpm' ? '%Nr' : 'fpm'}`}
             </SvgText>
           </>
         )}
@@ -146,7 +148,7 @@ export default function PerformanceChart({ type, curves = [], current, width = 3
           x={padL + plotW / 2} y={height - 1}
           fontSize={9} fill={COLORS.textMuted} textAnchor="middle"
         >
-          {type === 'vmax' ? 'Max Speed (knots)' : 'Rate of Climb (ft/min)'}
+          {type === 'vmax' ? 'Max Speed (knots)' : type === 'autorotation-rpm' ? 'Rotor RPM (% Nr)' : 'Rate of Climb (ft/min)'}
         </SvgText>
       </Svg>
 

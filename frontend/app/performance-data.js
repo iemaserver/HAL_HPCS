@@ -4,14 +4,15 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
-import { Menu, Mic } from 'lucide-react-native';
+import { Menu, Mic, AlertTriangle } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
 import AppMenu from '../src/components/AppMenu';
 import PerformanceChart from '../src/components/PerformanceChart';
 import {
   fromBaseUnit, toBaseUnit, CONVERSIONS,
-  computeVmaxKnots, computeROCFpm, buildPerformanceCurves, computeCurrentPerfPoint,
+  computeVmaxKnots, computeROCFpm, computeAutorotationRPMPercent,
+  buildPerformanceCurves, computeCurrentPerfPoint,
 } from '../src/constants/logic';
 import { useVoiceFieldControl } from '../src/hooks/useVoiceFieldControl';
 
@@ -121,7 +122,9 @@ export default function PerformanceData() {
   const { width } = useWindowDimensions();
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [metric, setMetric] = useState(params.metric === 'roc' ? 'roc' : 'vmax');
+  const [metric, setMetric] = useState(
+    params.metric === 'roc' ? 'roc' : params.metric === 'autorotation-rpm' ? 'autorotation-rpm' : 'vmax'
+  );
   // Rate-of-climb output unit — screen-local, not part of global unit prefs (ft/min vs m/min)
   const [rocUnit, setRocUnit] = useState('ft');
 
@@ -150,6 +153,12 @@ export default function PerformanceData() {
   const voiceOptions = [
     { key: 'vmax', label: 'Max Level Flight Speed', aliases: ['level flight speed', 'max speed', 'vmax'], onSelect: () => setMetric('vmax') },
     { key: 'roc', label: 'Rate of Climb', aliases: ['climb rate', 'roc'], onSelect: () => setMetric('roc') },
+    {
+      key: 'autorotation-rpm',
+      label: 'RPM in Autorotation',
+      aliases: ['autorotation', 'rpm', 'autorotation rpm'],
+      onSelect: () => setMetric('autorotation-rpm'),
+    },
   ];
 
   const onCommitValue = (key, n) => {
@@ -197,6 +206,7 @@ export default function PerformanceData() {
   const vmaxKt = Math.round(computeVmaxKnots(aircraft, outputs.DENSITY_ALT, outputs.AUW));
   const rocFpm = Math.round(computeROCFpm(aircraft, outputs.DENSITY_ALT, outputs.AUW));
   const rocDisplay = rocUnit === 'ft' ? rocFpm : Math.round(rocFpm * CONVERSIONS.ft_to_m);
+  const autorotationRpmPct = Math.round(computeAutorotationRPMPercent(aircraft, outputs.DENSITY_ALT, outputs.AUW));
 
   // useWindowDimensions() can briefly report width=0 on the initial RN-web hydration pass,
   // which would otherwise compute a negative <Svg> width — clamp to a sane minimum.
@@ -253,7 +263,25 @@ export default function PerformanceData() {
           >
             <Text style={[styles.tabText, metric === 'roc' && styles.tabTextActive]}>Rate of Climb</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabBtn, metric === 'autorotation-rpm' && styles.tabBtnActive]}
+            onPress={() => setMetric('autorotation-rpm')}
+            testID="tab-autorotation-rpm"
+          >
+            <Text style={[styles.tabText, metric === 'autorotation-rpm' && styles.tabTextActive]}>RPM in Autorotation</Text>
+          </TouchableOpacity>
         </View>
+
+        {metric === 'autorotation-rpm' && (
+          <View style={styles.noticeBanner} testID="autorotation-rpm-notice">
+            <AlertTriangle size={14} color={COLORS.warning} style={{ marginTop: 1 }} />
+            <Text style={styles.noticeText}>
+              Unverified placeholder — no flight-manual formula/chart exists for this yet. Uses a
+              textbook momentum-theory estimate pending client confirmation. Do not treat as
+              flight-certified.
+            </Text>
+          </View>
+        )}
 
         <View style={styles.divider} />
 
@@ -347,6 +375,18 @@ export default function PerformanceData() {
               </View>
             </View>
           </View>
+        ) : metric === 'autorotation-rpm' ? (
+          <View style={styles.outputRow} testID="output-autorotation-rpm">
+            <Text style={styles.outputLabel}>RPM in Autorotation</Text>
+            <View style={styles.outputValueBox}>
+              <Text style={styles.outputValueText}>{autorotationRpmPct}</Text>
+              <View style={styles.unitPill}>
+                <View style={[styles.unitSeg, styles.unitSegActive]}>
+                  <Text style={[styles.unitSegText, styles.unitSegTextActive]}>%Nr</Text>
+                </View>
+              </View>
+            </View>
+          </View>
         ) : (
           <View style={styles.outputRow} testID="output-roc">
             <Text style={styles.outputLabel}>Rate of Climb</Text>
@@ -399,6 +439,13 @@ const styles = StyleSheet.create({
   tabBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   tabText: { fontSize: 12.5, fontWeight: '700', color: COLORS.textMuted },
   tabTextActive: { color: '#fff' },
+
+  noticeBanner: {
+    flexDirection: 'row', gap: SPACING.sm, alignItems: 'flex-start',
+    backgroundColor: COLORS.warningBg, borderRadius: RADIUS.md, padding: SPACING.md,
+    borderWidth: 1, borderColor: COLORS.warning, marginTop: SPACING.md,
+  },
+  noticeText: { flex: 1, fontSize: 12, color: COLORS.warning, fontWeight: '600', lineHeight: 18 },
 
   divider: { height: 1, backgroundColor: COLORS.border, marginVertical: SPACING.lg },
 

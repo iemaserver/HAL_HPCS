@@ -411,6 +411,17 @@ export default function Calculator() {
           </View>
         )}
 
+        {outputs.warnings?.length > 0 && (
+          <View style={styles.noticeBanner}>
+            <AlertTriangle size={14} color={COLORS.warning} style={{ marginTop: 1 }} />
+            <View style={{ flex: 1 }}>
+              {outputs.warnings.map((w, i) => (
+                <Text key={i} style={styles.noticeText}>• {w}</Text>
+              ))}
+            </View>
+          </View>
+        )}
+
         <View style={styles.divider} />
 
         {/* ── INPUTS ── */}
@@ -681,6 +692,14 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.error, marginTop: SPACING.md,
   },
   warnText: { fontSize: 12, color: COLORS.error, fontWeight: '600', lineHeight: 18 },
+
+  // Notice banner — non-blocking, informational (e.g. unverified placeholder corrections)
+  noticeBanner: {
+    flexDirection: 'row', gap: SPACING.sm, alignItems: 'flex-start',
+    backgroundColor: COLORS.warningBg, borderRadius: RADIUS.md, padding: SPACING.md,
+    borderWidth: 1, borderColor: COLORS.warning, marginTop: SPACING.md,
+  },
+  noticeText: { fontSize: 12, color: COLORS.warning, fontWeight: '600', lineHeight: 18 },
 
   chartCard: {
     backgroundColor: COLORS.card, borderRadius: RADIUS.md,

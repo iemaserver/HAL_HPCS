@@ -273,13 +273,44 @@ const safeEval = (expr, ctx) => {
 
 const round = (n, p = 2) => Math.round(n * Math.pow(10, p)) / Math.pow(10, p);
 
-// TODO(client formula pending): Zσ1-4, Dθ1-4 (Default Settings page 2), Ageing Coefficient
-// and JPT Correction (Default Settings page 1) are captured on `aircraft` but are NOT
-// consumed by computePerformance() or any formula below. The client's PPTX describes Dθ as
-// "max collective pitch/max power AS PER THE EQUATION" but never states that equation, and
-// gives no interpolation method for Zσ/Dθ or a modifier formula for Ageing/JPT Correction —
-// this is safety-relevant aviation data, so nothing is invented here pending an explicit
-// method from the client.
+// ⚠️ PLACEHOLDER — UNVERIFIED, PENDING CLIENT SIGN-OFF (TASK-100) ⚠️
+// Zσ1-4/Dθ1-4 (Default Settings page 2) and Ageing Coefficient/JPT Correction (page 1) are
+// read off a flight-manual chart per sortie, but the client's PPTX never states an
+// interpolation method for Zσ/Dθ or a modifier formula for Ageing/JPT Correction — it only
+// says Dθ is "max collective pitch/max power AS PER THE EQUATION" without giving the
+// equation. This is safety-relevant aviation data, so the corrections below are a
+// conventional-engineering default (linear interpolation / additive offset), NOT a client-
+// confirmed formula. They are inert (produce a 0 correction) unless a user has actually
+// entered chart readings, so existing behavior is unchanged for anyone who hasn't. Do not
+// treat this as flight-certified until the client confirms or replaces it.
+//
+// Linearly interpolates a chart value (Zσn or Dθn) at pressure altitude `pa`, anchored at
+// (ZP0, 0) since there is no chart reading below the aircraft's own ZP0 reference. Stops at
+// the first missing/unentered point, so a partially-filled table still interpolates over
+// whatever prefix of ZP1-4 the user has actually read off their chart.
+const interpolateChartValue = (aircraft, pa, key) => {
+  const zp0 = Number(aircraft.zp0) || 0;
+  const points = [{ zp: zp0, v: 0 }];
+  for (let n = 1; n <= 4; n += 1) {
+    const raw = aircraft[`${key}${n}`];
+    if (raw === null || raw === undefined || raw === '') break;
+    points.push({ zp: zp0 + n * 2000, v: Number(raw) });
+  }
+  if (points.length < 2) return 0;
+  if (pa <= points[0].zp) return points[0].v;
+  const last = points[points.length - 1];
+  if (pa >= last.zp) return last.v;
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (pa >= a.zp && pa <= b.zp) {
+      const t = (pa - a.zp) / (b.zp - a.zp);
+      return a.v + t * (b.v - a.v);
+    }
+  }
+  return 0;
+};
+
 export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
   const { aircraft } = inputs;
 
@@ -312,14 +343,21 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
 
   const PA = safeEval(formulas.PA, baseCtx);
   const ISA_TEMP = safeEval(formulas.ISA_TEMP, { ...baseCtx, pa: PA });
-  const DENSITY_ALT = safeEval(formulas.DENSITY_ALT, { ...baseCtx, pa: PA, isa: ISA_TEMP });
+  const DENSITY_ALT_RAW = safeEval(formulas.DENSITY_ALT, { ...baseCtx, pa: PA, isa: ISA_TEMP });
+  // Placeholder chart correction (see interpolateChartValue above) — 0 unless Zσ1-4 entered.
+  const ZSIGMA_CORRECTION = interpolateChartValue(aircraft, PA, 'zSigma');
+  const DENSITY_ALT = DENSITY_ALT_RAW + ZSIGMA_CORRECTION;
   const DENSITY = safeEval(formulas.DENSITY, { ...baseCtx, pa: PA });
   const AB_TEMP = safeEval(formulas.AB_TEMP, { ...baseCtx, isa: ISA_TEMP });
   const EMPTY_WEIGHT = safeEval(formulas.EMPTY_WEIGHT, baseCtx);
   const AUW = safeEval(formulas.AUW, { ...baseCtx, empty_weight: EMPTY_WEIGHT });
-  const POWER_AVAIL = safeEval(formulas.POWER_AVAIL, {
+  const POWER_AVAIL_RAW = safeEval(formulas.POWER_AVAIL, {
     ...baseCtx, density_alt: DENSITY_ALT, auw: AUW,
   });
+  // Placeholder Ageing Coefficient derating (see block comment above) — treated as a percent
+  // power derating; 0 unless the user has entered a non-zero Ageing Coefficient.
+  const ageingFactor = Math.max(0, 1 - (Number(aircraft.ageingCoefficient) || 0) / 100);
+  const POWER_AVAIL = POWER_AVAIL_RAW * ageingFactor;
   const POWER_REQ = safeEval(formulas.POWER_REQ, {
     ...baseCtx, density_alt: DENSITY_ALT, auw: AUW,
   });
@@ -343,7 +381,7 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
   const POSSIBLE_PAYLOAD_LOWER = round((aircraft.auwLowerThresholdKg ?? aircraft.mauw) - nonLoadWeight);
   const POSSIBLE_PAYLOAD_UPPER = round(aircraft.mauw - nonLoadWeight);
 
-  const JPT = safeEval(formulas.JPT, {
+  const JPT_RAW = safeEval(formulas.JPT, {
     ...baseCtx,
     power_req: POWER_REQ,
     ab_temp: AB_TEMP,
@@ -351,6 +389,9 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     jpt_base: aircraft.jptBase ?? 600,
     jpt_range: aircraft.jptRange ?? 200,
   });
+  // Placeholder JPT Correction (see block comment above) — treated as a direct additive
+  // offset; 0 unless the user has entered a non-zero JPT Correction.
+  const JPT = JPT_RAW + (Number(aircraft.jptCorrection) || 0);
 
   const collectiveCtx = {
     ...baseCtx,
@@ -359,7 +400,9 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     collective_min: aircraft.collectiveMin ?? 2,
     collective_max: aircraft.collectiveMax ?? 13,
   };
-  const COLLECTIVE_REQ = safeEval(formulas.COLLECTIVE_REQ, collectiveCtx);
+  // Placeholder chart correction (see interpolateChartValue above) — 0 unless Dθ1-4 entered.
+  const DTHETA_CORRECTION = interpolateChartValue(aircraft, PA, 'dTheta');
+  const COLLECTIVE_REQ = safeEval(formulas.COLLECTIVE_REQ, collectiveCtx) + DTHETA_CORRECTION;
   const COLLECTIVE_AVAIL = safeEval(formulas.COLLECTIVE_AVAIL, collectiveCtx);
   const COLLECTIVE_BALANCE = safeEval(formulas.COLLECTIVE_BALANCE, {
     ...collectiveCtx,
@@ -385,6 +428,19 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     reasons.push(`JPT ${JPT.toFixed(0)}°C exceeds limit ${aircraft.jptMax ?? 870}°C`);
   }
 
+  // Non-blocking notices — only populated when an unverified placeholder correction
+  // (TASK-100) actually altered a result, so callers/UI can surface it if desired.
+  const warnings = [];
+  if (ZSIGMA_CORRECTION !== 0 || DTHETA_CORRECTION !== 0) {
+    warnings.push('Zσ/Dθ chart calibration correction applied — uses an unverified interpolation method, not yet confirmed by the client.');
+  }
+  if (aircraft.ageingCoefficient) {
+    warnings.push('Ageing Coefficient correction applied — uses an unverified derating formula, not yet confirmed by the client.');
+  }
+  if (aircraft.jptCorrection) {
+    warnings.push('JPT Correction applied — uses an unverified additive-offset formula, not yet confirmed by the client.');
+  }
+
   return {
     PA: round(PA),
     ISA_TEMP: round(ISA_TEMP),
@@ -406,6 +462,7 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     COLLECTIVE_BALANCE: round(COLLECTIVE_BALANCE, 1),
     status: reasons.length === 0 ? 'FIT' : 'NOT_FIT',
     reasons,
+    warnings,
   };
 };
 
@@ -434,6 +491,8 @@ export const CHART_DA_MAX = 22000;   // ft — Y-axis upper limit
 export const CHART_VMAX_MIN = 50;    // knots
 export const CHART_VMAX_MAX = 130;   // knots
 export const CHART_ROC_MAX = 2000;   // ft/min
+export const CHART_RPM_MIN = 60;     // % Nr
+export const CHART_RPM_MAX = 140;    // % Nr
 
 // Five evenly-spaced reference AUW values from 20 % above empty to MAUW
 export const getChartRefAuws = (aircraft) => {
@@ -458,29 +517,61 @@ export const computeVmaxKnots = (aircraft, da_ft, auw_kg) =>
 export const computeROCFpm = (aircraft, da_ft, auw_kg) =>
   Math.max(0, aircraft.rocBase * (_pAvailRoc(da_ft) - auw_kg / aircraft.mauw + aircraft.rocC));
 
+// ⚠️ PLACEHOLDER — UNVERIFIED, PENDING CLIENT SIGN-OFF (TASK-99) ⚠️
+// RPM in Autorotation: unlike every other formula in this file, there is NO source for this
+// anywhere — not the client PPTX, not the flight manuals referenced in the app. This is core
+// flight-safety data (the rotor RPM a pilot targets during an engine-out descent), so it is
+// NOT calibrated to any chart the way vmax/roc above are — it is a textbook momentum-theory
+// relation, standing in until the client supplies a real flight-manual chart or equation:
+//
+//   In steady-state (equilibrium) autorotation, momentum theory gives an approximately
+//   constant rotor thrust coefficient CT = W / (ρ·A·(ΩR)²) at the trimmed collective/inflow
+//   condition, which rearranges to:  Nr ∝ √(disc loading / air density) = √((AUW/MAUW) / σ)
+//   where σ is the standard-atmosphere density ratio at the current density altitude. This
+//   is the same qualitative relationship described in the FAA Helicopter Flying Handbook
+//   (rotor RPM required to autorotate rises with gross weight and with density altitude),
+//   but the constant of proportionality here is an assumption (100% Nr defined at MAUW,
+//   sea-level density), NOT a client-confirmed calibration.
+// DO NOT treat this as flight-certified data.
+export const RPM_AUTOROTATION_BASELINE_PCT = 100;
+
+// Standard-atmosphere (ISA, troposphere) density ratio σ at a given density altitude (ft).
+const densityRatioAtDA = (da_ft) => Math.pow(Math.max(0, 1 - 0.0000068756 * da_ft), 4.2561);
+
+// Rotor RPM (% Nr) required for equilibrium autorotation at density altitude da_ft and AUW
+// auw_kg — see the placeholder block comment above.
+export const computeAutorotationRPMPercent = (aircraft, da_ft, auw_kg) => {
+  const sigma = Math.max(0.05, densityRatioAtDA(da_ft));
+  const auwRatio = Math.max(0, auw_kg) / aircraft.mauw;
+  return RPM_AUTOROTATION_BASELINE_PCT * Math.sqrt(auwRatio / sigma);
+};
+
 // Build the five reference AUW curves for the performance chart.
-// type: 'vmax' | 'roc' — pass explicitly so both charts can be built for any aircraft.
+// type: 'vmax' | 'roc' | 'autorotation-rpm' — pass explicitly so any chart can be built for
+// any aircraft. 'autorotation-rpm' uses the unverified placeholder model above.
 export const buildPerformanceCurves = (aircraft, type) => {
   const refAuws = getChartRefAuws(aircraft);
   const daSteps = Array.from({ length: 45 }, (_, i) => i * 500);
+  const valueAt = (da, auw) => {
+    if (type === 'vmax') return Math.round(computeVmaxKnots(aircraft, da, auw));
+    if (type === 'autorotation-rpm') return Math.round(computeAutorotationRPMPercent(aircraft, da, auw));
+    return Math.round(computeROCFpm(aircraft, da, auw));
+  };
   return refAuws.map((auw) => ({
     auw,
-    points: daSteps.map((da) => ({
-      da,
-      value: type === 'vmax'
-        ? Math.round(computeVmaxKnots(aircraft, da, auw))
-        : Math.round(computeROCFpm(aircraft, da, auw)),
-    })).filter((p) => p.value > (type === 'vmax' ? 40 : 0)),
+    points: daSteps.map((da) => ({ da, value: valueAt(da, auw) }))
+      .filter((p) => p.value > (type === 'vmax' ? 40 : 0)),
   }));
 };
 
 // Current operating point to plot on the performance chart.
-export const computeCurrentPerfPoint = (aircraft, da_ft, auw_kg, type) => ({
-  da: da_ft,
-  value: type === 'vmax'
-    ? Math.round(computeVmaxKnots(aircraft, da_ft, auw_kg))
-    : Math.round(computeROCFpm(aircraft, da_ft, auw_kg)),
-});
+export const computeCurrentPerfPoint = (aircraft, da_ft, auw_kg, type) => {
+  let value;
+  if (type === 'vmax') value = Math.round(computeVmaxKnots(aircraft, da_ft, auw_kg));
+  else if (type === 'autorotation-rpm') value = Math.round(computeAutorotationRPMPercent(aircraft, da_ft, auw_kg));
+  else value = Math.round(computeROCFpm(aircraft, da_ft, auw_kg));
+  return { da: da_ft, value };
+};
 
 /* ---- PA vs Density Altitude ISA conversion chart (COMMON GRAPHS bottom-right) ---- */
 // Formula: DA = PA × 1.23526 + 118.8 × (OAT − 15)
