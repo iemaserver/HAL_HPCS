@@ -5,7 +5,7 @@ import {
 import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
 import {
   X, Calculator, PlaneTakeoff, FolderClock, Settings, ChevronRight, ChevronDown,
-  Gauge, Radar, BookOpen,
+  Gauge, Radar, BookOpen, Sigma,
 } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../constants/theme';
 
@@ -89,6 +89,17 @@ const NAV_ITEMS = [
     // Revisit if the design intentionally drops this feature.
     route: '/reports',
     Icon: FolderClock,
+  },
+  {
+    key: 'formulas',
+    label: 'Formulas',
+    desc: 'Edit calculation formulas & defaults',
+    // Also not present in the v.03 Figma menu (same situation as Saved Reports
+    // above) — this is the pre-redesign live formula/default-value editor
+    // (app/settings.js). Working screen, just dropped from navigation when
+    // AppMenu was rebuilt for v.03; restored here rather than left orphaned.
+    route: '/settings',
+    Icon: Sigma,
   },
 ];
 

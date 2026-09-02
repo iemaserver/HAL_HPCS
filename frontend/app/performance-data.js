@@ -311,7 +311,7 @@ export default function PerformanceData() {
               testID="cell-fuel-lt"
             />
             <ReadOnlyCell
-              label="Fuel" value={inputs.fuel} unit={units.weight} unitOptions={['kg', 'lb']}
+              label="Fuel Weight" value={inputs.fuel} unit={units.weight} unitOptions={['kg', 'lb']}
               onUnitChange={(u) => setUnit('weight', u)} testID="cell-fuel-mass"
             />
           </View>

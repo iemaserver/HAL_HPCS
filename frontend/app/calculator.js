@@ -488,7 +488,7 @@ export default function Calculator() {
               maxLength={3} testID="calc-fuel-lt" highlight={activeFieldKey === 'fuel'}
             />
             <ReadOnlyCell
-              label="Fuel" value={inputs.fuel} unit={fuelMassUnit} unitOptions={['kg', 'lb']}
+              label="Fuel Weight" value={inputs.fuel} unit={fuelMassUnit} unitOptions={['kg', 'lb']}
               onUnitChange={setFuelMassUnit} testID="calc-fuel-mass"
             />
           </View>
