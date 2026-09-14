@@ -28,7 +28,9 @@
  * see `start()` below for the one-time offline-model download this implies
  * on Android.
  */
-import { useCallback, useRef, useState } from 'react';
+import {
+  useCallback, useEffect, useRef, useState,
+} from 'react';
 import { Platform } from 'react-native';
 import Toast from 'react-native-toast-message';
 import {
@@ -148,7 +150,9 @@ const pairFieldsWithNumbers = (transcript, fields) => {
   return { commits, lastFieldKey, fallbackEligible };
 };
 
-export function useVoiceFieldControl({ fields = [], options = [], onCommitValue } = {}) {
+export function useVoiceFieldControl({
+  fields = [], options = [], onCommitValue, micEnabled = true,
+} = {}) {
   const [listening, setListening] = useState(false);
   const [activeFieldKey, setActiveFieldKey] = useState(null);
   const activeFieldRef = useRef(null); // avoids stale closures in event handlers
@@ -278,6 +282,14 @@ export function useVoiceFieldControl({ fields = [], options = [], onCommitValue 
 
   const start = useCallback(async () => {
     consecutiveErrorsRef.current = 0;
+    // App-wide mic kill switch (client spec) — independent of the OS mic permission, and
+    // checked fresh on every press so flipping it off mid-session takes effect immediately.
+    if (!micEnabled) {
+      Toast.show({
+        type: 'info', text1: 'Microphone is off', text2: 'Turn it back on from the menu', position: 'top',
+      });
+      return;
+    }
     if (!nativeSpeechAvailable) {
       Toast.show({
         type: 'info', text1: 'Voice requires a dev build', text2: 'Use the keypad instead', position: 'top',
@@ -317,7 +329,7 @@ export function useVoiceFieldControl({ fields = [], options = [], onCommitValue 
       setListening(false);
       Toast.show({ type: 'error', text1: 'Voice unavailable', text2: String(e?.message || e), position: 'top' });
     }
-  }, []);
+  }, [micEnabled]);
 
   const stop = useCallback(() => {
     listeningRef.current = false;
@@ -328,6 +340,13 @@ export function useVoiceFieldControl({ fields = [], options = [], onCommitValue 
   const toggle = useCallback(() => {
     if (listeningRef.current) stop(); else start();
   }, [start, stop]);
+
+  // If the mic kill switch is flipped off mid-session, stop listening immediately rather
+  // than waiting for the next press.
+  useEffect(() => {
+    if (!micEnabled && listeningRef.current) stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [micEnabled]);
 
   return {
     listening, activeFieldKey, start, stop, toggle, setActiveField: setActive,

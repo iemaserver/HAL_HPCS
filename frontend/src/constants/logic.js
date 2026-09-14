@@ -28,18 +28,32 @@
  * explicitly in the implementation report; the literal instruction text only
  * called out Cheetal, so double-check this Cheetah change is wanted.
  */
+// Collective-pitch, Nr, and JPT/T4 figures below (2026-09-14) are sourced from the actual
+// SA315B Lama flight manual (client's Cheetah is the license-built Lama; Chetak's Alouette
+// III shares the same rotor system and Artouste IIIB engine — same collective-pitch
+// indicator convention, same 353 rpm Nr, same T4 limit apply to both):
+//   - Collective pitch is a dimensionless indicator (NOT degrees) reading roughly 0.15-0.20
+//     at low pitch up to ~1.05-1.15 near the hover/rated-power limit. Manual-quoted points:
+//     "decreasing rotor rpm by increasing collective pitch to more than 0.20" (ground/low
+//     ref.), "economical cruising pitch above 1000m/3300ft is 0.85" (a cruise value, well
+//     below max — the actual max is chart-determined against density altitude, not a fixed
+//     number, matching how COLLECTIVE_REQ/COLLECTIVE_AVAIL already vary with conditions).
+//   - Main rotor speed (Nr) is governed at a constant 353 rpm (100%) in powered flight;
+//     autorotation keeps Nr within 270-420 rpm — a pilot-managed band, not something that
+//     shifts with AUW/altitude, so `idealAutorotationRPM` is a flat per-aircraft constant.
+//   - Tail-pipe temperature (T4/JPT) must not exceed 500°C (Artouste IIIB, Chetak/Cheetah).
 export const DEFAULT_AIRCRAFT = {
   chetak: {
     id: 'chetak',
     name: 'Chetak',
-    emptyWeight: 1165,
     // Weight breakdown (client PPTX slide 7/9): Empty Weight = Basic + Equipment + Pilot + Copilot.
-    // Seed values split the legacy emptyWeight so first-run defaults don't jump; all four are
+    // Values below are the client's corrected defaults (2026-09-14); all four remain
     // user-editable per-aircraft on Default Settings / Hover Power Calculation.
-    basicWeight: 985,
+    emptyWeight: 1440, // = basicWeight + equipmentWeight + pilotWeight + copilotWeight below
+    basicWeight: 1300,
     equipmentWeight: 0,
-    pilotWeight: 90,
-    copilotWeight: 90,
+    pilotWeight: 70,
+    copilotWeight: 70,
     // Ageing Coefficient / JPT Correction — captured only, not wired into any formula (see TODO below).
     ageingCoefficient: 0,
     jptCorrection: 0,
@@ -56,18 +70,20 @@ export const DEFAULT_AIRCRAFT = {
     auwLowerThresholdKg: 2100.13, // lower AUW threshold ≈ 4630 Lb (4630 × 0.453592)
     ratedPowerSHP: 550,
     baselinePowerReqSHP: 420,
-    defaultCrew: 180,
-    defaultFuel: 250,
+    defaultCrew: 0,     // Passenger Weight
+    defaultFuel: 460,   // = 575 L × 0.8 kg/L (client spec: 575 lt default)
     defaultAddLoad: 0,
-    defaultPayload: 400,
+    defaultPayload: 0,  // Load
     defaultElevation: 0,
     defaultQNH: 1013.25,
     defaultTemp: 15,
-    jptBase: 600,   // °C at sea level ISA, low-power
-    jptRange: 200,  // °C added from idle to rated power
-    jptMax: 870,    // °C max continuous (Artouste IIIB)
-    collectiveMin: 2,   // ° at minimum power / autorotation entry
-    collectiveMax: 13,  // ° at rated power (SA316B rotor)
+    jptBase: 220,   // °C — calibrated so default-condition JPT lands ~380-450°C (client spec)
+    jptRange: 300,  // °C added from idle to rated power
+    jptMax: 500,    // °C — real T4 limit (SA315B/SA316B flight manual: "T4 not to exceed 500°C")
+    collectiveMin: 0.15,  // dimensionless pitch indicator, low/autorotation-entry
+    collectiveMax: 1.10,  // dimensionless pitch indicator, near hover/rated-power limit
+    idealAutorotationRPM: 353,      // Nr, 100% — real flight-manual figure (both Chetak/Cheetah)
+    autorotationRPMRange: [270, 420], // real autorotation Nr band (flight manual)
     // Performance chart config — ref: CHETAK GRAPH + COMMON GRAPHS (SA316B)
     vmaxFactor: 1222, // ~108 kts at 1450 kg, sea level
     rocBase: 2700,   // ~600 ft/min at MAUW, sea level (SA316B ROC chart)
@@ -76,11 +92,11 @@ export const DEFAULT_AIRCRAFT = {
   cheetah: {
     id: 'cheetah',
     name: 'Cheetah',
-    emptyWeight: 1120,
-    basicWeight: 940,
+    emptyWeight: 1240,
+    basicWeight: 1100,
     equipmentWeight: 0,
-    pilotWeight: 90,
-    copilotWeight: 90,
+    pilotWeight: 70,
+    copilotWeight: 70,
     ageingCoefficient: 0,
     jptCorrection: 0,
     zp0: 0,
@@ -91,18 +107,20 @@ export const DEFAULT_AIRCRAFT = {
     auwLowerThresholdKg: 1950.45, // lower AUW threshold ≈ 4300 Lb (4300 × 0.453592)
     ratedPowerSHP: 550,
     baselinePowerReqSHP: 410,
-    defaultCrew: 180,
-    defaultFuel: 230,
+    defaultCrew: 0,
+    defaultFuel: 460,   // = 575 L × 0.8 kg/L
     defaultAddLoad: 0,
-    defaultPayload: 350,
+    defaultPayload: 0,
     defaultElevation: 0,
     defaultQNH: 1013.25,
     defaultTemp: 15,
-    jptBase: 600,
-    jptRange: 200,
-    jptMax: 870,
-    collectiveMin: 2,
-    collectiveMax: 13,  // same rotor as SA316B
+    jptBase: 220,
+    jptRange: 300,
+    jptMax: 500,   // same Artouste IIIB T4 limit as Chetak
+    collectiveMin: 0.15,
+    collectiveMax: 1.10,  // same rotor/pitch convention as SA316B (shared Lama/Alouette III system)
+    idealAutorotationRPM: 353,      // same rotor system as Chetak — same real Nr
+    autorotationRPMRange: [270, 420],
     // Performance chart config — ref: CHEETAH GRAPH (Lama)
     vmaxFactor: 1221, // same Lama calibration as CHETAK GRAPH left (~108 kts at 1450 kg)
     rocBase: 3500,
@@ -111,11 +129,11 @@ export const DEFAULT_AIRCRAFT = {
   cheetal: {
     id: 'cheetal',
     name: 'Cheetal',
-    emptyWeight: 1250,
-    basicWeight: 1070,
+    emptyWeight: 1290,
+    basicWeight: 1150,
     equipmentWeight: 0,
-    pilotWeight: 90,
-    copilotWeight: 90,
+    pilotWeight: 70,
+    copilotWeight: 70,
     ageingCoefficient: 0,
     jptCorrection: 0,
     zp0: 0,
@@ -126,18 +144,21 @@ export const DEFAULT_AIRCRAFT = {
     auwLowerThresholdKg: 1950.45, // lower AUW threshold ≈ 4300 Lb (4300 × 0.453592)
     ratedPowerSHP: 847,
     baselinePowerReqSHP: 520,
-    defaultCrew: 180,
-    defaultFuel: 260,
+    defaultCrew: 0,
+    defaultFuel: 460,   // = 575 L × 0.8 kg/L
     defaultAddLoad: 0,
-    defaultPayload: 420,
+    defaultPayload: 0,
     defaultElevation: 0,
     defaultQNH: 1013.25,
     defaultTemp: 15,
-    jptBase: 620,
-    jptRange: 230,
-    jptMax: 900,   // °C max continuous (TM333-2M2)
-    collectiveMin: 2,
-    collectiveMax: 14,  // ° at rated power (Dhruv 4-blade hingeless rotor)
+    // JPT not required/shown for Cheetal (client spec) — kept for data-model consistency only.
+    jptBase: 220,
+    jptRange: 300,
+    jptMax: 500,
+    collectiveMin: 0.15,
+    collectiveMax: 1.10,  // same Lama/Cheetah-derived rotor & pitch convention (re-engined only)
+    idealAutorotationRPM: 353,      // same rotor system as Cheetah (re-engined, rotor unchanged)
+    autorotationRPMRange: [270, 420],
     // Performance chart config — higher-power (847 shp vs 550 shp on Cheetah)
     vmaxFactor: 1265, // slightly higher speed envelope from more power
     rocBase: 5000,
@@ -457,9 +478,9 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     POSSIBLE_PAYLOAD_LOWER,
     POSSIBLE_PAYLOAD_UPPER,
     JPT: round(JPT),
-    COLLECTIVE_REQ: round(COLLECTIVE_REQ, 1),
-    COLLECTIVE_AVAIL: round(COLLECTIVE_AVAIL, 1),
-    COLLECTIVE_BALANCE: round(COLLECTIVE_BALANCE, 1),
+    COLLECTIVE_REQ: round(COLLECTIVE_REQ, 2),
+    COLLECTIVE_AVAIL: round(COLLECTIVE_AVAIL, 2),
+    COLLECTIVE_BALANCE: round(COLLECTIVE_BALANCE, 2),
     status: reasons.length === 0 ? 'FIT' : 'NOT_FIT',
     reasons,
     warnings,
@@ -491,8 +512,8 @@ export const CHART_DA_MAX = 22000;   // ft — Y-axis upper limit
 export const CHART_VMAX_MIN = 50;    // knots
 export const CHART_VMAX_MAX = 130;   // knots
 export const CHART_ROC_MAX = 2000;   // ft/min
-export const CHART_RPM_MIN = 60;     // % Nr
-export const CHART_RPM_MAX = 140;    // % Nr
+export const CHART_RPM_MIN = 250;    // rpm — a little below the real 270 rpm autorotation floor
+export const CHART_RPM_MAX = 440;    // rpm — a little above the real 420 rpm autorotation ceiling
 
 // Five evenly-spaced reference AUW values from 20 % above empty to MAUW
 export const getChartRefAuws = (aircraft) => {
@@ -517,46 +538,42 @@ export const computeVmaxKnots = (aircraft, da_ft, auw_kg) =>
 export const computeROCFpm = (aircraft, da_ft, auw_kg) =>
   Math.max(0, aircraft.rocBase * (_pAvailRoc(da_ft) - auw_kg / aircraft.mauw + aircraft.rocC));
 
-// ⚠️ PLACEHOLDER — UNVERIFIED, PENDING CLIENT SIGN-OFF (TASK-99) ⚠️
-// RPM in Autorotation: unlike every other formula in this file, there is NO source for this
-// anywhere — not the client PPTX, not the flight manuals referenced in the app. This is core
-// flight-safety data (the rotor RPM a pilot targets during an engine-out descent), so it is
-// NOT calibrated to any chart the way vmax/roc above are — it is a textbook momentum-theory
-// relation, standing in until the client supplies a real flight-manual chart or equation:
-//
-//   In steady-state (equilibrium) autorotation, momentum theory gives an approximately
-//   constant rotor thrust coefficient CT = W / (ρ·A·(ΩR)²) at the trimmed collective/inflow
-//   condition, which rearranges to:  Nr ∝ √(disc loading / air density) = √((AUW/MAUW) / σ)
-//   where σ is the standard-atmosphere density ratio at the current density altitude. This
-//   is the same qualitative relationship described in the FAA Helicopter Flying Handbook
-//   (rotor RPM required to autorotate rises with gross weight and with density altitude),
-//   but the constant of proportionality here is an assumption (100% Nr defined at MAUW,
-//   sea-level density), NOT a client-confirmed calibration.
-// DO NOT treat this as flight-certified data.
-export const RPM_AUTOROTATION_BASELINE_PCT = 100;
+// RPM in Autorotation (client correction, 2026-09-14, sourced from the actual SA315B Lama
+// flight manual — same rotor system as Chetak's Alouette III, and Cheetal is a re-engined
+// Cheetah on the same unchanged rotor): main rotor speed (Nr) is GOVERNED at a constant
+// 353 rpm (100%) in powered flight — it is not a function of AUW or density altitude the
+// way vmax/roc are. In autorotation the pilot manages Nr within a 270-420 rpm band; there is
+// no chart or equation giving a "required" Nr that varies with weight/altitude (unlike
+// vmax/roc, which do have manual-sourced charts) — the correct, honest representation is the
+// real governed target plus its real operating band, not an invented weight/altitude curve.
+export const computeAutorotationRPM = (aircraft) => aircraft.idealAutorotationRPM ?? 353;
 
-// Standard-atmosphere (ISA, troposphere) density ratio σ at a given density altitude (ft).
-const densityRatioAtDA = (da_ft) => Math.pow(Math.max(0, 1 - 0.0000068756 * da_ft), 4.2561);
-
-// Rotor RPM (% Nr) required for equilibrium autorotation at density altitude da_ft and AUW
-// auw_kg — see the placeholder block comment above.
-export const computeAutorotationRPMPercent = (aircraft, da_ft, auw_kg) => {
-  const sigma = Math.max(0.05, densityRatioAtDA(da_ft));
-  const auwRatio = Math.max(0, auw_kg) / aircraft.mauw;
-  return RPM_AUTOROTATION_BASELINE_PCT * Math.sqrt(auwRatio / sigma);
+// Three flat reference lines (min / ideal / max of the real 270-353-420 rpm band) instead of
+// the 5 AUW-weight curves used by vmax/roc — Nr doesn't vary by AUW, so those don't apply here.
+export const buildAutorotationRPMLines = (aircraft) => {
+  const [rpmMin, rpmMax] = aircraft.autorotationRPMRange ?? [270, 420];
+  const ideal = computeAutorotationRPM(aircraft);
+  const daSteps = Array.from({ length: 45 }, (_, i) => i * 500);
+  const flatLine = (label, value) => ({
+    auw: label,
+    points: daSteps.map((da) => ({ da, value })),
+  });
+  return [
+    flatLine(`Max (${rpmMax})`, rpmMax),
+    flatLine(`Ideal (${ideal})`, ideal),
+    flatLine(`Min (${rpmMin})`, rpmMin),
+  ];
 };
 
 // Build the five reference AUW curves for the performance chart.
-// type: 'vmax' | 'roc' | 'autorotation-rpm' — pass explicitly so any chart can be built for
-// any aircraft. 'autorotation-rpm' uses the unverified placeholder model above.
+// type: 'vmax' | 'roc' — pass explicitly so either chart can be built for any aircraft.
+// 'autorotation-rpm' uses buildAutorotationRPMLines() instead (flat lines, not AUW curves).
 export const buildPerformanceCurves = (aircraft, type) => {
   const refAuws = getChartRefAuws(aircraft);
   const daSteps = Array.from({ length: 45 }, (_, i) => i * 500);
-  const valueAt = (da, auw) => {
-    if (type === 'vmax') return Math.round(computeVmaxKnots(aircraft, da, auw));
-    if (type === 'autorotation-rpm') return Math.round(computeAutorotationRPMPercent(aircraft, da, auw));
-    return Math.round(computeROCFpm(aircraft, da, auw));
-  };
+  const valueAt = (da, auw) => (type === 'vmax'
+    ? Math.round(computeVmaxKnots(aircraft, da, auw))
+    : Math.round(computeROCFpm(aircraft, da, auw)));
   return refAuws.map((auw) => ({
     auw,
     points: daSteps.map((da) => ({ da, value: valueAt(da, auw) }))
@@ -568,7 +585,7 @@ export const buildPerformanceCurves = (aircraft, type) => {
 export const computeCurrentPerfPoint = (aircraft, da_ft, auw_kg, type) => {
   let value;
   if (type === 'vmax') value = Math.round(computeVmaxKnots(aircraft, da_ft, auw_kg));
-  else if (type === 'autorotation-rpm') value = Math.round(computeAutorotationRPMPercent(aircraft, da_ft, auw_kg));
+  else if (type === 'autorotation-rpm') value = computeAutorotationRPM(aircraft);
   else value = Math.round(computeROCFpm(aircraft, da_ft, auw_kg));
   return { da: da_ft, value };
 };

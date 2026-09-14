@@ -168,7 +168,7 @@ function ReadOnlyCell({ label, value, unit, unitOptions, onUnitChange, testID })
 export default function DefaultSettings() {
   const router = useRouter();
   const {
-    aircraftDefaults, selectedAircraftId, updateAircraftDefaults, units, setUnit, setInputs,
+    aircraftDefaults, selectedAircraftId, updateAircraftDefaults, setInputs, micEnabled,
   } = useAppState();
   const insets = useSafeAreaInsets();
   const aircraft = aircraftDefaults[selectedAircraftId];
@@ -176,20 +176,23 @@ export default function DefaultSettings() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [page, setPage] = useState(1);
 
-  // Screen-local unit toggles for fields that aren't part of the shared global `units` prefs
-  // (ZP0/T0/Zσ default to the same ft/°C pattern as elevation/temperature but are logically
-  // separate per-aircraft reference values, not live session inputs).
+  // Screen-local unit toggles for every field (client correction 2026-09-14: changing one
+  // field's unit must not change any other field's unit — previously Elevation/QNH/
+  // Temperature shared the global `units` prefs with other screens and so toggled together).
   const [zp0Unit, setZp0Unit] = useState('ft');
   const [t0Unit, setT0Unit] = useState('C');
   const [zSigmaUnit, setZSigmaUnit] = useState('ft');
   const [ageingUnit, setAgeingUnit] = useState('C');
   const [jptCorrUnit, setJptCorrUnit] = useState('C');
-  // Weight-field units default per PPTX slide 7: "DEFAULT UNITS ... AC WEIGHT: Lb, PILOT WT: KG"
-  // — deliberately mixed defaults, kept exactly as specified (not "fixed" to be consistent).
+  const [elevationUnit, setElevationUnit] = useState('ft');
+  const [qnhUnit, setQnhUnit] = useState('hPa');
+  const [temperatureUnit, setTemperatureUnit] = useState('C');
+  // Weight-field units default per PPTX slide 7 / client correction 2026-09-14:
+  // AC/Equipment weight → Lb, Pilot/Copilot weight → Kg — deliberately mixed defaults.
   const [basicWeightUnit, setBasicWeightUnit] = useState('lb');
   const [equipmentWeightUnit, setEquipmentWeightUnit] = useState('lb');
   const [pilotWeightUnit, setPilotWeightUnit] = useState('kg');
-  const [copilotWeightUnit, setCopilotWeightUnit] = useState('lb');
+  const [copilotWeightUnit, setCopilotWeightUnit] = useState('kg');
   const [emptyWeightUnit, setEmptyWeightUnit] = useState('lb');
 
   const patchAircraft = (patch) => {
@@ -225,7 +228,7 @@ export default function DefaultSettings() {
 
     switch (key) {
       case 'defaultElevation':
-        commitElevation(toBaseUnit(raw, units.altitude));
+        commitElevation(toBaseUnit(raw, elevationUnit));
         break;
       case 'basicWeight':
         patchAircraft({ basicWeight: toBaseUnit(raw, basicWeightUnit) });
@@ -246,10 +249,10 @@ export default function DefaultSettings() {
         patchAircraft({ jptCorrection: toBaseUnit(raw, jptCorrUnit) });
         break;
       case 'defaultQNH':
-        patchAircraft({ defaultQNH: toBaseUnit(raw, units.pressure) });
+        patchAircraft({ defaultQNH: toBaseUnit(raw, qnhUnit) });
         break;
       case 'defaultTemp':
-        patchAircraft({ defaultTemp: toBaseUnit(raw, units.temperature) });
+        patchAircraft({ defaultTemp: toBaseUnit(raw, temperatureUnit) });
         break;
       case 'zp0':
         patchAircraft({ zp0: toBaseUnit(raw, zp0Unit) });
@@ -292,7 +295,7 @@ export default function DefaultSettings() {
   ];
 
   const { listening, toggle } = useVoiceFieldControl({
-    fields: VOICE_FIELDS, options: voiceOptions, onCommitValue,
+    fields: VOICE_FIELDS, options: voiceOptions, onCommitValue, micEnabled,
   });
 
   return (
@@ -353,9 +356,9 @@ export default function DefaultSettings() {
           <View style={styles.grid}>
             <View style={styles.row}>
               <EditableCell
-                required label="Elevation" value={aircraft.defaultElevation} unit={units.altitude}
+                required label="Elevation" value={aircraft.defaultElevation} unit={elevationUnit}
                 unitOptions={['ft', 'm']} onCommit={commitElevation}
-                onUnitChange={(u) => setUnit('altitude', u)} maxLength={5} testID="ds-elevation"
+                onUnitChange={setElevationUnit} maxLength={5} testID="ds-elevation"
               />
               <EditableCell
                 required label="Basic Weight" value={aircraft.basicWeight} unit={basicWeightUnit}
@@ -400,15 +403,15 @@ export default function DefaultSettings() {
             </View>
             <View style={styles.row}>
               <EditableCell
-                required label="QNH" value={aircraft.defaultQNH} unit={units.pressure}
+                required label="QNH" value={aircraft.defaultQNH} unit={qnhUnit}
                 unitOptions={['hPa', 'inHg']} onCommit={(v) => patchAircraft({ defaultQNH: v })}
-                onUnitChange={(u) => setUnit('pressure', u)} maxLength={units.pressure === 'inHg' ? 3 : 4}
+                onUnitChange={setQnhUnit} maxLength={qnhUnit === 'inHg' ? 3 : 4}
                 testID="ds-qnh"
               />
               <EditableCell
-                required label="Temperature" value={aircraft.defaultTemp} unit={units.temperature}
+                required label="Temperature" value={aircraft.defaultTemp} unit={temperatureUnit}
                 unitOptions={['C', 'F']} onCommit={(v) => patchAircraft({ defaultTemp: v })}
-                onUnitChange={(u) => setUnit('temperature', u)} maxLength={3} testID="ds-temperature"
+                onUnitChange={setTemperatureUnit} maxLength={3} testID="ds-temperature"
               />
             </View>
             <View style={styles.row}>
@@ -502,7 +505,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
     alignItems: 'center', justifyContent: 'center', ...SHADOW,
   },
-  micBtnActive: { backgroundColor: COLORS.error },
+  micBtnActive: { backgroundColor: COLORS.success },
 
   titleRow: {
     flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 import { Menu, Mic, Settings, CheckSquare } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
@@ -14,8 +14,8 @@ const HELI_IMG = {
   cheetal: require('../assets/images/Cheetal-1.png'),
 };
 
-// Display order per Figma "HAL Design v.03 (Latest)" — Cheetah, Cheetal, Chetak.
-const AIRFRAMES = ['cheetah', 'cheetal', 'chetak'];
+// Display order (client correction, 2026-09-14): Chetak, Cheetah, Cheetal.
+const AIRFRAMES = ['chetak', 'cheetah', 'cheetal'];
 
 // Figma-specific brand colors used only on this screen (not part of the shared theme palette).
 const FIGMA = {
@@ -30,9 +30,21 @@ const FIGMA = {
 
 export default function Airframe() {
   const router = useRouter();
-  const { aircraftDefaults, selectedAircraftId, setSelectedAircraftId } = useAppState();
+  const pathname = usePathname();
+  const { aircraftDefaults, selectedAircraftId, setSelectedAircraftId, micEnabled } = useAppState();
   const [menuOpen, setMenuOpen] = useState(false);
   const tapTimeoutRef = useRef(null);
+  // Bug fix (2026-09-14): Expo Router's native stack keeps this screen mounted in the
+  // background after ANY router.push away from it (e.g. tapping "Default Settings", or
+  // navigating via the menu) — not just the tap-fast-path case the guard below already
+  // covers. So the 2s idle timer below was still firing goToCalculator() a moment after
+  // the user had already navigated elsewhere, force-replacing whatever screen they'd just
+  // opened (Default Settings, References, …) with /calculator. Tracking the live pathname
+  // in a ref lets the idle timer check, at fire time, whether this screen is still actually
+  // the active route — catching every way of navigating away, not just the ones with an
+  // explicit local guard.
+  const pathnameRef = useRef(pathname);
+  useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
   // Guards against BOTH timers below ever firing a navigation: Expo Router's native
   // stack keeps a pushed-from screen mounted in the background (it isn't unmounted
   // just because you navigated away), so its timers keep running. Without this guard,
@@ -45,6 +57,7 @@ export default function Airframe() {
 
   const goToCalculator = () => {
     if (navigatedRef.current) return;
+    if (pathnameRef.current !== '/airframe') return; // navigated away by some other means already
     navigatedRef.current = true;
     // replace (not push): this screen shouldn't remain on the stack under the
     // calculator, and replace can't accumulate duplicate instances even if this
@@ -106,6 +119,7 @@ export default function Airframe() {
         onSelect: () => router.push('/default-settings'),
       },
     ],
+    micEnabled,
   });
 
   return (
@@ -221,7 +235,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   micBtnActive: {
-    backgroundColor: FIGMA.headerBlue,
+    backgroundColor: COLORS.success,
     borderWidth: 2,
     borderColor: '#fff',
   },

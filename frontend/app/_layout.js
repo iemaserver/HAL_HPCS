@@ -20,7 +20,6 @@ export default function RootLayout() {
             <Stack.Screen name="review" />
             <Stack.Screen name="results" />
             <Stack.Screen name="reports" />
-            <Stack.Screen name="settings" />
             <Stack.Screen name="references" />
             <Stack.Screen name="performance-data" />
             <Stack.Screen name="default-settings" />

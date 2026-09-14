@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Modal, View, Text, TouchableOpacity, Animated, StyleSheet,
+  Modal, View, Text, TouchableOpacity, Animated, StyleSheet, Switch, Linking, Platform,
 } from 'react-native';
 import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
 import {
   X, Calculator, PlaneTakeoff, FolderClock, Settings, ChevronRight, ChevronDown,
-  Gauge, Radar, BookOpen, Sigma,
+  Gauge, Radar, BookOpen, Mic, ExternalLink,
 } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../constants/theme';
+import { useAppState } from '../store/AppState';
 
 const MENU_WIDTH = 270;
 
@@ -52,8 +53,8 @@ const NAV_ITEMS = [
         label: 'RPM in Autorotation',
         route: '/performance-data',
         params: { metric: 'autorotation-rpm' },
-        // TASK-99: wired to an unverified placeholder model (see logic.js) — no client
-        // formula/chart exists yet. Screen itself carries a prominent "unverified" notice.
+        // Shows the real, flight-manual-sourced governed Nr (353 rpm) and its 270-420 rpm
+        // autorotation band — see computeAutorotationRPM() in logic.js.
       },
     ],
   },
@@ -91,23 +92,13 @@ const NAV_ITEMS = [
     route: '/reports',
     Icon: FolderClock,
   },
-  {
-    key: 'formulas',
-    label: 'Formulas',
-    desc: 'Edit calculation formulas & defaults',
-    // Also not present in the v.03 Figma menu (same situation as Saved Reports
-    // above) — this is the pre-redesign live formula/default-value editor
-    // (app/settings.js). Working screen, just dropped from navigation when
-    // AppMenu was rebuilt for v.03; restored here rather than left orphaned.
-    route: '/settings',
-    Icon: Sigma,
-  },
 ];
 
 export default function AppMenu({ visible, onClose }) {
   const router = useRouter();
   const pathname = usePathname();
   const { metric: activeMetric } = useLocalSearchParams();
+  const { micEnabled, setMicEnabled } = useAppState();
   const slideAnim = useRef(new Animated.Value(MENU_WIDTH)).current;
   const [expandedKey, setExpandedKey] = useState(
     pathname === '/performance-data' ? 'performance-data' : null,
@@ -263,6 +254,40 @@ export default function AppMenu({ visible, onClose }) {
                 </View>
               );
             })}
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* Mic controls (client spec 2026-09-14): an in-app kill switch (works instantly,
+              no OS round-trip) plus a shortcut to the OS-level permission screen for a
+              harder disable. */}
+          <View style={styles.micSection}>
+            <View style={styles.micRow}>
+              <View style={styles.iconWrap}>
+                <Mic size={17} color={micEnabled ? COLORS.success : COLORS.error} />
+              </View>
+              <View style={styles.navText}>
+                <Text style={styles.navLabel}>Microphone</Text>
+                <Text style={styles.navDesc} numberOfLines={1}>
+                  {micEnabled ? 'On — voice control available' : 'Off — all screens'}
+                </Text>
+              </View>
+              <Switch
+                value={micEnabled}
+                onValueChange={setMicEnabled}
+                trackColor={{ false: COLORS.border, true: COLORS.success }}
+                thumbColor="#fff"
+                testID="mic-kill-switch"
+              />
+            </View>
+            <TouchableOpacity
+              style={styles.permBtn}
+              onPress={() => (Platform.OS === 'web' ? null : Linking.openSettings())}
+              testID="open-app-permissions-btn"
+            >
+              <Text style={styles.permBtnText}>Open app permissions</Text>
+              <ExternalLink size={13} color={COLORS.primary} />
+            </TouchableOpacity>
           </View>
         </Animated.View>
       </View>
@@ -428,6 +453,33 @@ const styles = StyleSheet.create({
   },
   subLabelDisabled: {
     color: COLORS.textMuted,
+  },
+
+  micSection: {
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  micRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  permBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginLeft: 36 + SPACING.md, // align under the label, past the icon column
+  },
+  permBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.primary,
   },
 
   comingSoonTag: {

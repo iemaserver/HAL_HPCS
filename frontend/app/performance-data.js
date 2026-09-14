@@ -11,7 +11,7 @@ import AppMenu from '../src/components/AppMenu';
 import PerformanceChart from '../src/components/PerformanceChart';
 import {
   fromBaseUnit, toBaseUnit, CONVERSIONS,
-  computeVmaxKnots, computeROCFpm, computeAutorotationRPMPercent,
+  computeVmaxKnots, computeROCFpm, computeAutorotationRPM, buildAutorotationRPMLines,
   buildPerformanceCurves, computeCurrentPerfPoint,
 } from '../src/constants/logic';
 import { useVoiceFieldControl } from '../src/hooks/useVoiceFieldControl';
@@ -117,7 +117,9 @@ function ReadOnlyCell({ label, value, unit, unitOptions, onUnitChange, suffix, t
 
 export default function PerformanceData() {
   const params = useLocalSearchParams();
-  const { aircraftDefaults, selectedAircraftId, inputs, setInputs, units, setUnit, outputs } = useAppState();
+  const {
+    aircraftDefaults, selectedAircraftId, inputs, setInputs, outputs, micEnabled,
+  } = useAppState();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
 
@@ -125,8 +127,19 @@ export default function PerformanceData() {
   const [metric, setMetric] = useState(
     params.metric === 'roc' ? 'roc' : params.metric === 'autorotation-rpm' ? 'autorotation-rpm' : 'vmax'
   );
-  // Rate-of-climb output unit — screen-local, not part of global unit prefs (ft/min vs m/min)
+  // Screen-local unit toggles (client correction 2026-09-14: changing one field's unit must
+  // not change any other field's unit, including on other screens that used to share these
+  // via the global `units` prefs).
   const [rocUnit, setRocUnit] = useState('ft');
+  const [elevationUnit, setElevationUnit] = useState('ft');
+  const [qnhUnit, setQnhUnit] = useState('hPa');
+  const [temperatureUnit, setTemperatureUnit] = useState('C');
+  const [paUnit, setPaUnit] = useState('ft');
+  const [daUnit, setDaUnit] = useState('ft');
+  const [auwUnit, setAuwUnit] = useState('kg');
+  const [loadUnit, setLoadUnit] = useState('kg');
+  const [passengerWeightUnit, setPassengerWeightUnit] = useState('kg');
+  const [fuelMassUnit, setFuelMassUnit] = useState('kg');
 
   const aircraft = aircraftDefaults[selectedAircraftId];
 
@@ -164,19 +177,19 @@ export default function PerformanceData() {
   const onCommitValue = (key, n) => {
     switch (key) {
       case 'elevation':
-        setInputs({ elevation: toBaseUnit(n, units.altitude) });
+        setInputs({ elevation: toBaseUnit(n, elevationUnit) });
         break;
       case 'qnh':
-        setInputs({ qnh: toBaseUnit(n, units.pressure) });
+        setInputs({ qnh: toBaseUnit(n, qnhUnit) });
         break;
       case 'temperature':
-        setInputs({ temperature: toBaseUnit(n, units.temperature) });
+        setInputs({ temperature: toBaseUnit(n, temperatureUnit) });
         break;
       case 'load':
-        setInputs({ payload: toBaseUnit(n, units.weight) });
+        setInputs({ payload: toBaseUnit(n, loadUnit) });
         break;
       case 'passengerWeight':
-        setInputs({ crewWeight: toBaseUnit(n, units.weight) });
+        setInputs({ crewWeight: toBaseUnit(n, passengerWeightUnit) });
         break;
       case 'fuel':
         // Fuel's EditableCell has unit="L" (truthy), so its own commit() already runs
@@ -194,10 +207,13 @@ export default function PerformanceData() {
   };
 
   const { listening, toggle: toggleVoice } = useVoiceFieldControl({
-    fields: voiceFields, options: voiceOptions, onCommitValue,
+    fields: voiceFields, options: voiceOptions, onCommitValue, micEnabled,
   });
 
-  const curves = useMemo(() => buildPerformanceCurves(aircraft, metric), [aircraft, metric]);
+  const curves = useMemo(
+    () => (metric === 'autorotation-rpm' ? buildAutorotationRPMLines(aircraft) : buildPerformanceCurves(aircraft, metric)),
+    [aircraft, metric],
+  );
   const currentPoint = useMemo(
     () => computeCurrentPerfPoint(aircraft, outputs.DENSITY_ALT, outputs.AUW, metric),
     [aircraft, outputs.DENSITY_ALT, outputs.AUW, metric],
@@ -206,7 +222,7 @@ export default function PerformanceData() {
   const vmaxKt = Math.round(computeVmaxKnots(aircraft, outputs.DENSITY_ALT, outputs.AUW));
   const rocFpm = Math.round(computeROCFpm(aircraft, outputs.DENSITY_ALT, outputs.AUW));
   const rocDisplay = rocUnit === 'ft' ? rocFpm : Math.round(rocFpm * CONVERSIONS.ft_to_m);
-  const autorotationRpmPct = Math.round(computeAutorotationRPMPercent(aircraft, outputs.DENSITY_ALT, outputs.AUW));
+  const autorotationRpm = computeAutorotationRPM(aircraft);
 
   // useWindowDimensions() can briefly report width=0 on the initial RN-web hydration pass,
   // which would otherwise compute a negative <Svg> width — clamp to a sane minimum.
@@ -273,12 +289,12 @@ export default function PerformanceData() {
         </View>
 
         {metric === 'autorotation-rpm' && (
-          <View style={styles.noticeBanner} testID="autorotation-rpm-notice">
-            <AlertTriangle size={14} color={COLORS.warning} style={{ marginTop: 1 }} />
-            <Text style={styles.noticeText}>
-              Unverified placeholder — no flight-manual formula/chart exists for this yet. Uses a
-              textbook momentum-theory estimate pending client confirmation. Do not treat as
-              flight-certified.
+          <View style={styles.infoBanner} testID="autorotation-rpm-notice">
+            <AlertTriangle size={14} color={COLORS.primaryDark} style={{ marginTop: 1 }} />
+            <Text style={styles.infoText}>
+              Main rotor speed (Nr) is governed at a constant {aircraft.idealAutorotationRPM} rpm in
+              powered flight. In autorotation it is managed within a {aircraft.autorotationRPMRange?.[0]}-{aircraft.autorotationRPMRange?.[1]} rpm
+              band — a pilot-managed target, not a value that shifts with weight or altitude.
             </Text>
           </View>
         )}
@@ -289,46 +305,46 @@ export default function PerformanceData() {
         <View style={styles.grid}>
           <View style={styles.row}>
             <EditableCell
-              label="Elevation" value={inputs.elevation} unit={units.altitude} unitOptions={['ft', 'm']}
-              onCommit={(v) => setInputs({ elevation: v })} onUnitChange={(u) => setUnit('altitude', u)}
+              label="Elevation" value={inputs.elevation} unit={elevationUnit} unitOptions={['ft', 'm']}
+              onCommit={(v) => setInputs({ elevation: v })} onUnitChange={setElevationUnit}
               testID="cell-elevation"
             />
             <EditableCell
-              label="QNH" value={inputs.qnh} unit={units.pressure} unitOptions={['hPa', 'inHg']}
-              onCommit={(v) => setInputs({ qnh: v })} onUnitChange={(u) => setUnit('pressure', u)}
+              label="QNH" value={inputs.qnh} unit={qnhUnit} unitOptions={['hPa', 'inHg']}
+              onCommit={(v) => setInputs({ qnh: v })} onUnitChange={setQnhUnit}
               testID="cell-qnh"
             />
           </View>
           <View style={styles.row}>
             <EditableCell
-              label="Temperature" value={inputs.temperature} unit={units.temperature} unitOptions={['C', 'F']}
-              onCommit={(v) => setInputs({ temperature: v })} onUnitChange={(u) => setUnit('temperature', u)}
+              label="Temperature" value={inputs.temperature} unit={temperatureUnit} unitOptions={['C', 'F']}
+              onCommit={(v) => setInputs({ temperature: v })} onUnitChange={setTemperatureUnit}
               testID="cell-temperature"
             />
             <ReadOnlyCell
-              label="PA/Zp1" value={outputs.PA} unit={units.altitude} unitOptions={['ft', 'm']}
-              onUnitChange={(u) => setUnit('altitude', u)} testID="cell-pa"
+              label="PA/Zp1" value={outputs.PA} unit={paUnit} unitOptions={['ft', 'm']}
+              onUnitChange={setPaUnit} testID="cell-pa"
             />
           </View>
           <View style={styles.row}>
             <ReadOnlyCell
-              label="DA/Zσ1" value={outputs.DENSITY_ALT} unit={units.altitude} unitOptions={['ft', 'm']}
-              onUnitChange={(u) => setUnit('altitude', u)} testID="cell-da"
+              label="DA/Zσ1" value={outputs.DENSITY_ALT} unit={daUnit} unitOptions={['ft', 'm']}
+              onUnitChange={setDaUnit} testID="cell-da"
             />
             <ReadOnlyCell
-              label="All up Weight" value={outputs.AUW} unit={units.weight} unitOptions={['kg', 'lb']}
-              onUnitChange={(u) => setUnit('weight', u)} testID="cell-auw"
+              label="All up Weight" value={outputs.AUW} unit={auwUnit} unitOptions={['kg', 'lb']}
+              onUnitChange={setAuwUnit} testID="cell-auw"
             />
           </View>
           <View style={styles.row}>
             <EditableCell
-              label="Load" value={inputs.payload} unit={units.weight} unitOptions={['kg', 'lb']}
-              onCommit={(v) => setInputs({ payload: v })} onUnitChange={(u) => setUnit('weight', u)}
+              label="Load" value={inputs.payload} unit={loadUnit} unitOptions={['kg', 'lb']}
+              onCommit={(v) => setInputs({ payload: v })} onUnitChange={setLoadUnit}
               testID="cell-load"
             />
             <EditableCell
-              label="Passenger Weight" required value={inputs.crewWeight} unit={units.weight} unitOptions={['kg', 'lb']}
-              onCommit={(v) => setInputs({ crewWeight: v })} onUnitChange={(u) => setUnit('weight', u)}
+              label="Passenger Weight" required value={inputs.crewWeight} unit={passengerWeightUnit} unitOptions={['kg', 'lb']}
+              onCommit={(v) => setInputs({ crewWeight: v })} onUnitChange={setPassengerWeightUnit}
               testID="cell-passenger-weight"
             />
           </View>
@@ -339,8 +355,8 @@ export default function PerformanceData() {
               testID="cell-fuel-lt"
             />
             <ReadOnlyCell
-              label="Fuel Weight" value={inputs.fuel} unit={units.weight} unitOptions={['kg', 'lb']}
-              onUnitChange={(u) => setUnit('weight', u)} testID="cell-fuel-mass"
+              label="Fuel Weight" value={inputs.fuel} unit={fuelMassUnit} unitOptions={['kg', 'lb']}
+              onUnitChange={setFuelMassUnit} testID="cell-fuel-mass"
             />
           </View>
           {metric === 'vmax' ? (
@@ -379,10 +395,10 @@ export default function PerformanceData() {
           <View style={styles.outputRow} testID="output-autorotation-rpm">
             <Text style={styles.outputLabel}>RPM in Autorotation</Text>
             <View style={styles.outputValueBox}>
-              <Text style={styles.outputValueText}>{autorotationRpmPct}</Text>
+              <Text style={styles.outputValueText}>{autorotationRpm}</Text>
               <View style={styles.unitPill}>
                 <View style={[styles.unitSeg, styles.unitSegActive]}>
-                  <Text style={[styles.unitSegText, styles.unitSegTextActive]}>%Nr</Text>
+                  <Text style={[styles.unitSegText, styles.unitSegTextActive]}>rpm</Text>
                 </View>
               </View>
             </View>
@@ -420,7 +436,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
     alignItems: 'center', justifyContent: 'center', ...SHADOW,
   },
-  micBtnActive: { backgroundColor: COLORS.error },
+  micBtnActive: { backgroundColor: COLORS.success },
 
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, marginTop: SPACING.md },
   badge: {
@@ -440,12 +456,12 @@ const styles = StyleSheet.create({
   tabText: { fontSize: 12.5, fontWeight: '700', color: COLORS.textMuted },
   tabTextActive: { color: '#fff' },
 
-  noticeBanner: {
+  infoBanner: {
     flexDirection: 'row', gap: SPACING.sm, alignItems: 'flex-start',
-    backgroundColor: COLORS.warningBg, borderRadius: RADIUS.md, padding: SPACING.md,
-    borderWidth: 1, borderColor: COLORS.warning, marginTop: SPACING.md,
+    backgroundColor: COLORS.primaryLight, borderRadius: RADIUS.md, padding: SPACING.md,
+    borderWidth: 1, borderColor: COLORS.primary, marginTop: SPACING.md,
   },
-  noticeText: { flex: 1, fontSize: 12, color: COLORS.warning, fontWeight: '600', lineHeight: 18 },
+  infoText: { flex: 1, fontSize: 12, color: COLORS.primaryDark, fontWeight: '600', lineHeight: 18 },
 
   divider: { height: 1, backgroundColor: COLORS.border, marginVertical: SPACING.lg },
 

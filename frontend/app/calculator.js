@@ -180,7 +180,7 @@ function JPTGraph({ aircraft, abTemp, auw, currentDA, currentJPT, width, height 
 export default function Calculator() {
   const router = useRouter();
   const {
-    aircraftDefaults, selectedAircraftId, inputs, setInputs, units, setUnit, outputs,
+    aircraftDefaults, selectedAircraftId, inputs, setInputs, units, outputs, micEnabled,
     updateAircraftDefaults,
   } = useAppState();
   const insets = useSafeAreaInsets();
@@ -193,14 +193,30 @@ export default function Calculator() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Screen-local unit toggles for the weight-breakdown fields — PPTX slide 7 mandates mixed
-  // Lb/Kg defaults (AC/Equipment/Copilot weight → Lb, Pilot weight → Kg). Shared with
-  // Default Settings only through the underlying kg value (aircraftDefaults), not the toggle.
+  // Lb/Kg defaults (AC/Equipment weight → Lb, Pilot/Copilot weight → Kg per client
+  // correction 2026-09-14). Shared with Default Settings only through the underlying kg
+  // value (aircraftDefaults), not the toggle.
   const [basicWeightUnit, setBasicWeightUnit] = useState('lb');
   const [equipmentWeightUnit, setEquipmentWeightUnit] = useState('lb');
   const [pilotWeightUnit, setPilotWeightUnit] = useState('kg');
-  const [copilotWeightUnit, setCopilotWeightUnit] = useState('lb');
+  const [copilotWeightUnit, setCopilotWeightUnit] = useState('kg');
   const [emptyWeightUnit, setEmptyWeightUnit] = useState('kg');
   const [fuelMassUnit, setFuelMassUnit] = useState('kg');
+
+  // Screen-local unit toggles (client correction 2026-09-14: changing one field's unit must
+  // not change any other field's unit — every toggle below is independent, even fields that
+  // used to share the global `units.*` prefs and so silently toggled together).
+  const [elevationUnit, setElevationUnit] = useState('ft');
+  const [qnhUnit, setQnhUnit] = useState('hPa');
+  const [temperatureUnit, setTemperatureUnit] = useState('C');
+  const [paUnit, setPaUnit] = useState('ft');
+  const [daUnit, setDaUnit] = useState('ft');
+  const [passengerWeightUnit, setPassengerWeightUnit] = useState('kg');
+  const [loadUnit, setLoadUnit] = useState('kg');
+  const [auwUnit, setAuwUnit] = useState('kg');
+  const [jptUnit, setJptUnit] = useState('C');
+  const [payloadLowerUnit, setPayloadLowerUnit] = useState('kg');
+  const [payloadUpperUnit, setPayloadUpperUnit] = useState('kg');
 
   const chartWidth = Math.max(200, Math.min(width - (SPACING.lg + SPACING.md) * 2, 380));
 
@@ -320,13 +336,13 @@ export default function Calculator() {
   const onCommitValue = (key, n) => {
     switch (key) {
       case 'elevation':
-        commitElevation(toBaseUnit(n, units.altitude));
+        commitElevation(toBaseUnit(n, elevationUnit));
         break;
       case 'qnh':
-        setInputs({ qnh: toBaseUnit(n, units.pressure) });
+        setInputs({ qnh: toBaseUnit(n, qnhUnit) });
         break;
       case 'temperature':
-        setInputs({ temperature: toBaseUnit(n, units.temperature) });
+        setInputs({ temperature: toBaseUnit(n, temperatureUnit) });
         break;
       case 'aircraftWeight':
         patchAircraft({ basicWeight: toBaseUnit(n, basicWeightUnit) });
@@ -341,7 +357,7 @@ export default function Calculator() {
         patchAircraft({ copilotWeight: toBaseUnit(n, copilotWeightUnit) });
         break;
       case 'passengerWeight':
-        setInputs({ crewWeight: toBaseUnit(n, units.weight) });
+        setInputs({ crewWeight: toBaseUnit(n, passengerWeightUnit) });
         break;
       case 'fuel':
         // Fuel's EditableCell has unit="L" (truthy), so its own commit() already runs
@@ -349,7 +365,7 @@ export default function Calculator() {
         setInputs({ fuel: toBaseUnit(n, 'L') });
         break;
       case 'load':
-        setInputs({ payload: toBaseUnit(n, units.weight) });
+        setInputs({ payload: toBaseUnit(n, loadUnit) });
         break;
       default:
         break;
@@ -358,7 +374,9 @@ export default function Calculator() {
 
   const {
     listening, activeFieldKey, toggle: toggleVoice,
-  } = useVoiceFieldControl({ fields: voiceFields, options: voiceOptions, onCommitValue });
+  } = useVoiceFieldControl({
+    fields: voiceFields, options: voiceOptions, onCommitValue, micEnabled,
+  });
 
   const lowerLb = Math.round((aircraft.auwLowerThresholdKg ?? aircraft.mauw) * CONVERSIONS.kg_to_lb);
   const upperLb = Math.round(aircraft.mauw * CONVERSIONS.kg_to_lb);
@@ -428,28 +446,28 @@ export default function Calculator() {
         <View style={styles.grid}>
           <View style={styles.row}>
             <EditableCell
-              required label="Elevation" value={inputs.elevation} unit={units.altitude}
+              required label="Elevation" value={inputs.elevation} unit={elevationUnit}
               unitOptions={['ft', 'm']} onCommit={commitElevation}
-              onUnitChange={(u) => setUnit('altitude', u)} maxLength={5} testID="calc-elevation"
+              onUnitChange={setElevationUnit} maxLength={5} testID="calc-elevation"
               highlight={activeFieldKey === 'elevation'}
             />
             <EditableCell
-              required label="QNH" value={inputs.qnh} unit={units.pressure}
+              required label="QNH" value={inputs.qnh} unit={qnhUnit}
               unitOptions={['hPa', 'inHg']} onCommit={(v) => setInputs({ qnh: v })}
-              onUnitChange={(u) => setUnit('pressure', u)} maxLength={units.pressure === 'inHg' ? 3 : 4}
+              onUnitChange={setQnhUnit} maxLength={qnhUnit === 'inHg' ? 3 : 4}
               testID="calc-qnh" highlight={activeFieldKey === 'qnh'}
             />
           </View>
           <View style={styles.row}>
             <EditableCell
-              required label="Temperature" value={inputs.temperature} unit={units.temperature}
+              required label="Temperature" value={inputs.temperature} unit={temperatureUnit}
               unitOptions={['C', 'F']} onCommit={(v) => setInputs({ temperature: v })}
-              onUnitChange={(u) => setUnit('temperature', u)} maxLength={3} testID="calc-temperature"
+              onUnitChange={setTemperatureUnit} maxLength={3} testID="calc-temperature"
               highlight={activeFieldKey === 'temperature'}
             />
             <ReadOnlyCell
-              label="PA/Zp0" value={outputs.PA} unit={units.altitude} unitOptions={['ft', 'm']}
-              onUnitChange={(u) => setUnit('altitude', u)} testID="calc-pa"
+              label="PA/Zp0" value={outputs.PA} unit={paUnit} unitOptions={['ft', 'm']}
+              onUnitChange={setPaUnit} testID="calc-pa"
             />
           </View>
           <View style={styles.row}>
@@ -486,9 +504,9 @@ export default function Calculator() {
               unitOptions={['lb', 'kg']} onUnitChange={setEmptyWeightUnit} testID="calc-empty-weight"
             />
             <EditableCell
-              required label="Passenger Weight" value={inputs.crewWeight} unit={units.weight}
+              required label="Passenger Weight" value={inputs.crewWeight} unit={passengerWeightUnit}
               unitOptions={['kg', 'lb']} onCommit={(v) => setInputs({ crewWeight: v })}
-              onUnitChange={(u) => setUnit('weight', u)} maxLength={3} testID="calc-passenger-weight"
+              onUnitChange={setPassengerWeightUnit} maxLength={3} testID="calc-passenger-weight"
               highlight={activeFieldKey === 'passengerWeight'}
             />
           </View>
@@ -505,13 +523,13 @@ export default function Calculator() {
           </View>
           <View style={styles.row}>
             <ReadOnlyCell
-              label="Max Power Available" value={outputs.POWER_AVAIL} suffix="shp" highlight
+              label="Max Collective Pitch Available" value={outputs.COLLECTIVE_AVAIL} highlight
               testID="calc-max-power-avail"
             />
             <EditableCell
-              required label="Load" value={inputs.payload} unit={units.weight}
+              required label="Load" value={inputs.payload} unit={loadUnit}
               unitOptions={['kg', 'lb']} onCommit={(v) => setInputs({ payload: v })}
-              onUnitChange={(u) => setUnit('weight', u)} maxLength={3} testID="calc-load"
+              onUnitChange={setLoadUnit} maxLength={3} testID="calc-load"
               highlight={activeFieldKey === 'load'}
             />
           </View>
@@ -524,34 +542,36 @@ export default function Calculator() {
         <View style={styles.grid}>
           <View style={styles.row}>
             <ReadOnlyCell
-              label="DA/Zd0" value={outputs.DENSITY_ALT} unit={units.altitude} unitOptions={['ft', 'm']}
-              onUnitChange={(u) => setUnit('altitude', u)} warn={outputs.DENSITY_ALT > 18000} testID="calc-da"
+              label="DA/Zd0" value={outputs.DENSITY_ALT} unit={daUnit} unitOptions={['ft', 'm']}
+              onUnitChange={setDaUnit} warn={outputs.DENSITY_ALT > 18000} testID="calc-da"
             />
             <ReadOnlyCell
-              label="All Up Weight" value={outputs.AUW} unit={units.weight} unitOptions={['kg', 'lb']}
-              onUnitChange={(u) => setUnit('weight', u)} warn={outputs.AUW > aircraft.mauw} testID="calc-auw"
+              label="All Up Weight" value={outputs.AUW} unit={auwUnit} unitOptions={['kg', 'lb']}
+              onUnitChange={setAuwUnit} warn={outputs.AUW > aircraft.mauw} testID="calc-auw"
             />
           </View>
           <View style={styles.row}>
             <ReadOnlyCell
-              label="Hover Power Required" value={outputs.POWER_REQ} suffix="shp" highlight
-              warn={outputs.POWER_REQ > outputs.POWER_AVAIL} testID="calc-power-req"
+              label="Hover Power Required" value={outputs.COLLECTIVE_REQ} highlight
+              warn={outputs.COLLECTIVE_REQ > outputs.COLLECTIVE_AVAIL} testID="calc-power-req"
             />
-            <ReadOnlyCell
-              label="JPT" value={outputs.JPT} unit={units.temperature} unitOptions={['C', 'F']}
-              onUnitChange={(u) => setUnit('temperature', u)} warn={outputs.JPT > (aircraft.jptMax ?? 870)}
-              testID="calc-jpt"
-            />
+            {aircraft.id !== 'cheetal' ? (
+              <ReadOnlyCell
+                label="JPT" value={outputs.JPT} unit={jptUnit} unitOptions={['C', 'F']}
+                onUnitChange={setJptUnit} warn={outputs.JPT > (aircraft.jptMax ?? 500)}
+                testID="calc-jpt"
+              />
+            ) : <View style={styles.cell} />}
           </View>
           <View style={styles.row}>
             <ReadOnlyCell
               label={`Possible Payload For ${lowerLb}Lb`} value={outputs.POSSIBLE_PAYLOAD_LOWER}
-              unit={units.weight} unitOptions={['kg', 'lb']} onUnitChange={(u) => setUnit('weight', u)}
+              unit={payloadLowerUnit} unitOptions={['kg', 'lb']} onUnitChange={setPayloadLowerUnit}
               warn={outputs.POSSIBLE_PAYLOAD_LOWER < 0} testID="calc-payload-lower"
             />
             <ReadOnlyCell
               label={`For ${upperLb}Lb`} value={outputs.POSSIBLE_PAYLOAD_UPPER}
-              unit={units.weight} unitOptions={['kg', 'lb']} onUnitChange={(u) => setUnit('weight', u)}
+              unit={payloadUpperUnit} unitOptions={['kg', 'lb']} onUnitChange={setPayloadUpperUnit}
               warn={outputs.POSSIBLE_PAYLOAD_UPPER < 0} testID="calc-payload-upper"
             />
           </View>
@@ -559,14 +579,18 @@ export default function Calculator() {
 
         <View style={styles.divider} />
 
-        {/* ── JPT CALCULATION ON GRAPH ── */}
-        <Text style={styles.sectionLabel}>JPT CALCULATION ON GRAPH</Text>
-        <View style={styles.chartCard}>
-          <JPTGraph
-            aircraft={aircraft} abTemp={outputs.AB_TEMP} auw={outputs.AUW}
-            currentDA={outputs.DENSITY_ALT} currentJPT={outputs.JPT} width={chartWidth}
-          />
-        </View>
+        {/* ── JPT CALCULATION ON GRAPH ── (not applicable to Cheetal — client spec) */}
+        {aircraft.id !== 'cheetal' && (
+          <>
+            <Text style={styles.sectionLabel}>JPT CALCULATION ON GRAPH</Text>
+            <View style={styles.chartCard}>
+              <JPTGraph
+                aircraft={aircraft} abTemp={outputs.AB_TEMP} auw={outputs.AUW}
+                currentDA={outputs.DENSITY_ALT} currentJPT={outputs.JPT} width={chartWidth}
+              />
+            </View>
+          </>
+        )}
 
         {/* ── ACTIONS ── */}
         <TouchableOpacity
@@ -642,7 +666,7 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff',
     alignItems: 'center', justifyContent: 'center', ...SHADOW,
   },
-  micBtnActive: { backgroundColor: COLORS.error },
+  micBtnActive: { backgroundColor: COLORS.success },
 
   titleRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

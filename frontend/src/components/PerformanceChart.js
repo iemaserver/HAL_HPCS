@@ -33,7 +33,7 @@ export default function PerformanceChart({ type, curves = [], current, width = 3
   const sx = (v) => padL + ((v - xMin) / xRange) * plotW;
   const sy = (da) => padT + (1 - da / CHART_DA_MAX) * plotH;
 
-  const xTickStep = type === 'vmax' ? 10 : type === 'autorotation-rpm' ? 10 : 250;
+  const xTickStep = type === 'vmax' ? 10 : type === 'autorotation-rpm' ? 20 : 250;
   const xTicks = [];
   for (let v = xMin; v <= xMax; v += xTickStep) xTicks.push(v);
 
@@ -129,7 +129,7 @@ export default function PerformanceChart({ type, curves = [], current, width = 3
               y={sy(current.da) - 8}
               fontSize={10.5} fill={COLORS.primary} fontWeight="bold"
             >
-              {`${current.value} ${type === 'vmax' ? 'kts' : type === 'autorotation-rpm' ? '%Nr' : 'fpm'}`}
+              {`${current.value} ${type === 'vmax' ? 'kts' : type === 'autorotation-rpm' ? 'rpm' : 'fpm'}`}
             </SvgText>
           </>
         )}
@@ -148,7 +148,7 @@ export default function PerformanceChart({ type, curves = [], current, width = 3
           x={padL + plotW / 2} y={height - 1}
           fontSize={9} fill={COLORS.textMuted} textAnchor="middle"
         >
-          {type === 'vmax' ? 'Max Speed (knots)' : type === 'autorotation-rpm' ? 'Rotor RPM (% Nr)' : 'Rate of Climb (ft/min)'}
+          {type === 'vmax' ? 'Max Speed (knots)' : type === 'autorotation-rpm' ? 'Rotor RPM (rpm)' : 'Rate of Climb (ft/min)'}
         </SvgText>
       </Svg>
 
@@ -157,7 +157,7 @@ export default function PerformanceChart({ type, curves = [], current, width = 3
         {curves.map((c, idx) => (
           <View key={c.auw} style={styles.legendItem}>
             <View style={[styles.legendLine, { backgroundColor: CURVE_COLORS[idx % CURVE_COLORS.length] }]} />
-            <Text style={styles.legendLabel}>{c.auw} kg</Text>
+            <Text style={styles.legendLabel}>{type === 'autorotation-rpm' ? c.auw : `${c.auw} kg`}</Text>
           </View>
         ))}
         <View style={styles.legendItem}>

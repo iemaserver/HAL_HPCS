@@ -24,6 +24,9 @@ export const AppStateProvider = ({ children }) => {
   const [aircraftDefaults, setAircraftDefaults] = useState(DEFAULT_AIRCRAFT);
   const [formulas, setFormulas] = useState(DEFAULT_FORMULAS);
   const [selectedAircraftId, setSelectedAircraftId] = useState('chetak');
+  // App-wide mic kill switch (client spec 2026-09-14) — when false, no screen's mic button
+  // should start listening, independent of the OS-level microphone permission.
+  const [micEnabled, setMicEnabled] = useState(true);
   const [units, setUnits] = useState({
     altitude: 'ft',
     temperature: 'C',
@@ -57,6 +60,7 @@ export const AppStateProvider = ({ children }) => {
           if (session.selectedAircraftId) setSelectedAircraftId(session.selectedAircraftId);
           if (session.units) setUnits((prev) => ({ ...prev, ...session.units }));
           if (session.inputs) setInputsState((prev) => ({ ...prev, ...session.inputs }));
+          if (typeof session.micEnabled === 'boolean') setMicEnabled(session.micEnabled);
         }
       } catch (e) {
         console.warn('DB load failed, using defaults', e);
@@ -67,11 +71,11 @@ export const AppStateProvider = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persist session whenever aircraft, inputs, or units change.
+  // Persist session whenever aircraft, inputs, units, or the mic kill switch change.
   useEffect(() => {
     if (!ready) return;
-    saveSession({ selectedAircraftId, inputs, units }).catch(() => {});
-  }, [ready, selectedAircraftId, inputs, units]);
+    saveSession({ selectedAircraftId, inputs, units, micEnabled }).catch(() => {});
+  }, [ready, selectedAircraftId, inputs, units, micEnabled]);
 
   const setInputs = (v) => setInputsState((prev) => ({ ...prev, ...v }));
 
@@ -117,6 +121,8 @@ export const AppStateProvider = ({ children }) => {
     units,
     setUnit,
     outputs,
+    micEnabled,
+    setMicEnabled,
     updateAircraftDefaults,
     updateFormulas,
     resetInputsToDefaults,
