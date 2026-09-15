@@ -187,10 +187,10 @@ export default function DefaultSettings() {
   const [elevationUnit, setElevationUnit] = useState('ft');
   const [qnhUnit, setQnhUnit] = useState('hPa');
   const [temperatureUnit, setTemperatureUnit] = useState('C');
-  // Weight-field units default per PPTX slide 7 / client correction 2026-09-14:
-  // AC/Equipment weight → Lb, Pilot/Copilot weight → Kg — deliberately mixed defaults.
-  const [basicWeightUnit, setBasicWeightUnit] = useState('lb');
-  const [equipmentWeightUnit, setEquipmentWeightUnit] = useState('lb');
+  // Weight-field units (client correction 2026-09-15: default unit is Kg wherever
+  // applicable — was a mixed Lb/Kg split per the original PPTX).
+  const [basicWeightUnit, setBasicWeightUnit] = useState('kg');
+  const [equipmentWeightUnit, setEquipmentWeightUnit] = useState('kg');
   const [pilotWeightUnit, setPilotWeightUnit] = useState('kg');
   const [copilotWeightUnit, setCopilotWeightUnit] = useState('kg');
   // Kg to match calculator.js's default (client's own Empty Weight spec was given in kg) —

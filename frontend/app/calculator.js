@@ -192,12 +192,12 @@ export default function Calculator() {
   const [reportName, setReportName] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Screen-local unit toggles for the weight-breakdown fields — PPTX slide 7 mandates mixed
-  // Lb/Kg defaults (AC/Equipment weight → Lb, Pilot/Copilot weight → Kg per client
-  // correction 2026-09-14). Shared with Default Settings only through the underlying kg
-  // value (aircraftDefaults), not the toggle.
-  const [basicWeightUnit, setBasicWeightUnit] = useState('lb');
-  const [equipmentWeightUnit, setEquipmentWeightUnit] = useState('lb');
+  // Screen-local unit toggles for the weight-breakdown fields (client correction
+  // 2026-09-15: default unit is Kg wherever applicable — was a mixed Lb/Kg split per the
+  // original PPTX). Shared with Default Settings only through the underlying kg value
+  // (aircraftDefaults), not the toggle.
+  const [basicWeightUnit, setBasicWeightUnit] = useState('kg');
+  const [equipmentWeightUnit, setEquipmentWeightUnit] = useState('kg');
   const [pilotWeightUnit, setPilotWeightUnit] = useState('kg');
   const [copilotWeightUnit, setCopilotWeightUnit] = useState('kg');
   const [emptyWeightUnit, setEmptyWeightUnit] = useState('kg');
