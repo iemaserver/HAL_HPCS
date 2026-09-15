@@ -20,6 +20,7 @@ export default function Reports() {
   const [confirmId, setConfirmId] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [viewingReport, setViewingReport] = useState(null); // the report object currently shown in the in-app viewer
+  const [viewerContentHeight, setViewerContentHeight] = useState(null); // measured HTML content height, so the WebView doesn't leave a big blank gap for short reports
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -53,11 +54,31 @@ export default function Reports() {
     }
   };
 
-  const doView = (r) => setViewingReport(r);
+  const doView = (r) => {
+    setViewerContentHeight(null);
+    setViewingReport(r);
+  };
   const closeView = () => setViewingReport(null);
   const viewingHtml = viewingReport
     ? buildReportHtml({ ...viewingReport, ...viewingReport.payload })
     : null;
+  // Measures the report's actual rendered height so the WebView can be sized to its content
+  // instead of always filling the screen (which left a large blank gap below short reports).
+  const measureHeightJs = `
+    (function() {
+      var send = function() {
+        window.ReactNativeWebView.postMessage(String(document.body.scrollHeight));
+      };
+      send();
+      window.addEventListener('load', send);
+      setTimeout(send, 300);
+    })();
+    true;
+  `;
+  const onViewerMessage = (event) => {
+    const h = parseInt(event.nativeEvent.data, 10);
+    if (!isNaN(h) && h > 0) setViewerContentHeight(h);
+  };
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="reports-screen">
@@ -162,19 +183,33 @@ export default function Reports() {
                 style={{ flex: 1, border: 'none', width: '100%' }}
                 title={viewingReport?.name || 'Report'}
                 data-testid="report-webview"
+                onLoad={(e) => {
+                  try {
+                    const h = e.target.contentWindow.document.body.scrollHeight;
+                    if (h > 0) setViewerContentHeight(h);
+                  } catch { /* ignore */ }
+                }}
               />
             ) : (
-              <WebView
-                source={{ html: viewingHtml }}
-                style={{ flex: 1 }}
-                originWhitelist={['*']}
-                testID="report-webview"
-              />
+              // Sized to the report's OWN measured content height (via injectedJavaScript
+              // below) instead of flex:1 — flex:1 always filled the whole screen regardless
+              // of content length, leaving a large blank gap below shorter reports.
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
+                <WebView
+                  source={{ html: viewingHtml }}
+                  style={{ height: viewerContentHeight || 800, opacity: viewerContentHeight ? 1 : 0 }}
+                  scrollEnabled={false}
+                  injectedJavaScript={measureHeightJs}
+                  onMessage={onViewerMessage}
+                  originWhitelist={['*']}
+                  testID="report-webview"
+                />
+              </ScrollView>
             )
           )}
           <View style={[styles.viewerFooter, { paddingBottom: SPACING.md + insets.bottom }]}>
             <TouchableOpacity
-              style={[styles.btn, styles.btnPrimary]}
+              style={styles.viewerShareBtn}
               onPress={() => viewingReport && doShare(viewingReport)}
               testID="viewer-share-btn"
             >
@@ -248,5 +283,15 @@ const styles = StyleSheet.create({
   viewerFooter: {
     padding: SPACING.md, backgroundColor: COLORS.card,
     borderTopWidth: 1, borderTopColor: COLORS.border,
+  },
+  // Deliberately NOT reusing `btn` here: `btn`'s flex:1 is designed for siblings inside a
+  // flexDirection:'row' container (like the card's View/Share/Delete row), where it means
+  // "share the available width". As the lone child of viewerFooter (a plain, unbounded-height
+  // column View), flex:1 instead means "grow to fill height" — Yoga then resolves the Text
+  // child's available width to 0 on native (the icon still renders since it's fixed-size),
+  // so the label silently disappeared while the icon stayed visible.
+  viewerShareBtn: {
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    gap: 6, paddingVertical: 14, borderRadius: RADIUS.sm, backgroundColor: COLORS.primary,
   },
 });
