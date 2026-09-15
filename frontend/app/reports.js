@@ -1,20 +1,25 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, Modal } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import Toast from 'react-native-toast-message';
-import { ChevronLeft, Share2, Trash2, FileText, Inbox, Menu } from 'lucide-react-native';
+import WebView from 'react-native-webview';
+import {
+  ChevronLeft, Share2, Trash2, FileText, Inbox, Menu, Eye, X,
+} from 'lucide-react-native';
 import AppMenu from '../src/components/AppMenu';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { listReports, deleteReport } from '../src/services/database';
-import { generateAndSharePdf } from '../src/utils/pdf';
+import { generateAndSharePdf, buildReportHtml } from '../src/utils/pdf';
 
 export default function Reports() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [confirmId, setConfirmId] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [viewingReport, setViewingReport] = useState(null); // the report object currently shown in the in-app viewer
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -47,6 +52,12 @@ export default function Reports() {
       Toast.show({ type: 'error', text1: 'Share failed', text2: String(e?.message || e), position: 'top' });
     }
   };
+
+  const doView = (r) => setViewingReport(r);
+  const closeView = () => setViewingReport(null);
+  const viewingHtml = viewingReport
+    ? buildReportHtml({ ...viewingReport, ...viewingReport.payload })
+    : null;
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="reports-screen">
@@ -96,9 +107,13 @@ export default function Reports() {
               </View>
 
               <View style={{ flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.md }}>
+                <TouchableOpacity style={[styles.btn, styles.btnOutline]} onPress={() => doView(r)} testID={`view-${r.id}`}>
+                  <Eye size={16} color={COLORS.primaryDark} />
+                  <Text style={styles.btnOutlineText}>View</Text>
+                </TouchableOpacity>
                 <TouchableOpacity style={[styles.btn, styles.btnPrimary]} onPress={() => doShare(r)} testID={`share-${r.id}`}>
                   <Share2 size={16} color="#fff" />
-                  <Text style={styles.btnPrimaryText}>Share PDF</Text>
+                  <Text style={styles.btnPrimaryText}>Share</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.btn, styles.btnGhost]} onPress={() => doDelete(r.id)} testID={`delete-${r.id}`}>
                   <Trash2 size={16} color={COLORS.error} />
@@ -125,6 +140,49 @@ export default function Reports() {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* In-app report viewer — same HTML content used for the shared PDF (client spec
+          2026-09-15: saved reports should be viewable in-app, not just shareable). */}
+      <Modal visible={viewingReport !== null} animationType="slide" onRequestClose={closeView}>
+        <SafeAreaView style={styles.viewerRoot} edges={['top', 'bottom']} testID="report-viewer">
+          <View style={[styles.viewerHeader, { paddingTop: insets.top ? 0 : SPACING.sm }]}>
+            <Text style={styles.viewerTitle} numberOfLines={1}>{viewingReport?.name || 'Report'}</Text>
+            <TouchableOpacity onPress={closeView} style={styles.headerBtn} hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }} testID="close-viewer-btn">
+              <X size={20} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          {viewingHtml && (
+            Platform.OS === 'web' ? (
+              // react-native-webview has no web implementation (renders "does not support
+              // this platform") — the app's real target is native, but a plain iframe keeps
+              // the dev-preview usable for a quick visual check.
+              <iframe
+                srcDoc={viewingHtml}
+                style={{ flex: 1, border: 'none', width: '100%' }}
+                title={viewingReport?.name || 'Report'}
+                data-testid="report-webview"
+              />
+            ) : (
+              <WebView
+                source={{ html: viewingHtml }}
+                style={{ flex: 1 }}
+                originWhitelist={['*']}
+                testID="report-webview"
+              />
+            )
+          )}
+          <View style={[styles.viewerFooter, { paddingBottom: SPACING.md + insets.bottom }]}>
+            <TouchableOpacity
+              style={[styles.btn, styles.btnPrimary]}
+              onPress={() => viewingReport && doShare(viewingReport)}
+              testID="viewer-share-btn"
+            >
+              <Share2 size={16} color="#fff" />
+              <Text style={styles.btnPrimaryText}>Share PDF</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
@@ -174,8 +232,21 @@ const styles = StyleSheet.create({
   btnPrimaryText: { color: '#fff', fontWeight: '800' },
   btnGhost: { backgroundColor: '#fff', borderWidth: 1, borderColor: COLORS.border },
   btnGhostText: { color: COLORS.error, fontWeight: '800' },
+  btnOutline: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: COLORS.primary },
+  btnOutlineText: { color: COLORS.primaryDark, fontWeight: '800' },
   modalBack: { flex: 1, backgroundColor: 'rgba(15,23,42,0.5)', justifyContent: 'center', padding: SPACING.xl },
   modalCard: { backgroundColor: '#fff', borderRadius: RADIUS.lg, padding: SPACING.lg },
   modalTitle: { fontSize: 18, fontWeight: '900', color: COLORS.text },
   modalSub: { color: COLORS.textMuted, marginTop: 4 },
+
+  viewerRoot: { flex: 1, backgroundColor: COLORS.bg },
+  viewerHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACING.md, paddingVertical: SPACING.md, backgroundColor: COLORS.primary,
+  },
+  viewerTitle: { flex: 1, color: '#fff', fontWeight: '900', fontSize: 15, marginRight: SPACING.sm },
+  viewerFooter: {
+    padding: SPACING.md, backgroundColor: COLORS.card,
+    borderTopWidth: 1, borderTopColor: COLORS.border,
+  },
 });

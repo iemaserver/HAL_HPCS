@@ -193,7 +193,9 @@ export default function DefaultSettings() {
   const [equipmentWeightUnit, setEquipmentWeightUnit] = useState('lb');
   const [pilotWeightUnit, setPilotWeightUnit] = useState('kg');
   const [copilotWeightUnit, setCopilotWeightUnit] = useState('kg');
-  const [emptyWeightUnit, setEmptyWeightUnit] = useState('lb');
+  // Kg to match calculator.js's default (client's own Empty Weight spec was given in kg) —
+  // previously 'lb' here, which made the same value display differently across screens.
+  const [emptyWeightUnit, setEmptyWeightUnit] = useState('kg');
 
   const patchAircraft = (patch) => {
     updateAircraftDefaults({

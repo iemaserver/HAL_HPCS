@@ -216,9 +216,9 @@ function _buildIsaSvg(current, w = 720, h = 252) {
   return s;
 }
 
-// ─── Main export ────────────────────────────────────────────────────────────
+// ─── HTML report builder (shared by in-app viewing and PDF export) ─────────
 
-export const generateAndSharePdf = async (report) => {
+export const buildReportHtml = (report) => {
   const name = report?.name || 'HAL_Report';
   const createdAt = report?.created_at || new Date().toISOString();
   const aircraft = report?.aircraft || {};
@@ -470,6 +470,15 @@ export const generateAndSharePdf = async (report) => {
 
 </body>
 </html>`;
+
+  return html;
+};
+
+// ─── Main export ────────────────────────────────────────────────────────────
+
+export const generateAndSharePdf = async (report) => {
+  const name = report?.name || 'HAL_Report';
+  const html = buildReportHtml(report);
 
   /* ── WEB ── */
   if (Platform.OS === 'web') {
