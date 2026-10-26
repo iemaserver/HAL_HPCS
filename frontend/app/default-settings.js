@@ -103,7 +103,7 @@ function UnitPill({ options, active, onSelect }) {
 
 // ── Editable field cell ──
 function EditableCell({
-  label, required, value, unit, unitOptions, onCommit, onUnitChange, maxLength, testID,
+  label, required, value, unit, unitOptions, onCommit, onUnitChange, maxLength, testID, compact,
 }) {
   const derive = (v, u) => (v !== null && v !== undefined ? String(round2(unit ? fromBaseUnit(v, u) : v)) : '');
   const [local, setLocal] = useState(() => derive(value, unit));
@@ -134,7 +134,7 @@ function EditableCell({
       </Text>
       <View style={styles.cellInputRow}>
         <TextInput
-          style={styles.cellInput}
+          style={[styles.cellInput, compact && styles.cellInputCompact]}
           value={local}
           onChangeText={setLocal}
           onFocus={() => setFocused(true)}
@@ -408,7 +408,7 @@ export default function DefaultSettings() {
                 required label="QNH" value={aircraft.defaultQNH} unit={qnhUnit}
                 unitOptions={['hPa', 'mmHg']} onCommit={(v) => patchAircraft({ defaultQNH: v })}
                 onUnitChange={setQnhUnit} maxLength={qnhUnit === 'mmHg' ? 6 : 7}
-                testID="ds-qnh"
+                testID="ds-qnh" compact
               />
               <EditableCell
                 required label="Temperature" value={aircraft.defaultTemp} unit={temperatureUnit}
@@ -535,6 +535,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border,
     borderRadius: RADIUS.md, height: 38, paddingHorizontal: SPACING.md, ...SHADOW,
   },
+  cellInputCompact: { fontSize: 12, minWidth: 0 },
   cellInput: { flex: 1, fontSize: 14, fontWeight: '600', color: '#525252', padding: 0 },
   cellInputStatic: { flex: 1, fontSize: 14, fontWeight: '600', color: '#525252' },
 

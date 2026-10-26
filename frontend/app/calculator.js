@@ -51,7 +51,7 @@ function UnitPill({ options, active, onSelect }) {
 
 // ── Editable field cell — "TO BE IN BLOCK/BIGGER FONT" (PPTX) via cellInput's weight/size ──
 function EditableCell({
-  label, required, value, unit, unitOptions, onCommit, onUnitChange, maxLength, highlight, testID,
+  label, required, value, unit, unitOptions, onCommit, onUnitChange, maxLength, highlight, testID, compact,
 }) {
   const derive = (v, u) => (v !== null && v !== undefined ? String(round2(unit ? fromBaseUnit(v, u) : v)) : '');
   const [local, setLocal] = useState(() => derive(value, unit));
@@ -82,7 +82,7 @@ function EditableCell({
       </Text>
       <View style={[styles.cellInputRow, highlight && styles.cellInputRowHighlight]}>
         <TextInput
-          style={styles.cellInput}
+          style={[styles.cellInput, compact && styles.cellInputCompact]}
           value={local}
           onChangeText={setLocal}
           onFocus={() => setFocused(true)}
@@ -455,7 +455,7 @@ export default function Calculator() {
               required label="QNH" value={inputs.qnh} unit={qnhUnit}
               unitOptions={['hPa', 'mmHg']} onCommit={(v) => setInputs({ qnh: v })}
               onUnitChange={setQnhUnit} maxLength={qnhUnit === 'mmHg' ? 6 : 7}
-              testID="calc-qnh" highlight={activeFieldKey === 'qnh'}
+              testID="calc-qnh" highlight={activeFieldKey === 'qnh'} compact
             />
           </View>
           <View style={styles.row}>
@@ -700,11 +700,12 @@ const styles = StyleSheet.create({
   cellInputRowWarn: { borderColor: COLORS.error, borderWidth: 1.5 },
   // "TO BE IN BLOCK/BIGGER FONT" (PPTX) — numeric values read as a bold "block" style.
   cellInput: { flex: 1, fontSize: 16, fontWeight: '800', color: '#525252', padding: 0 },
+  cellInputCompact: { fontSize: 12, minWidth: 0 },
   cellInputStatic: { flex: 1, fontSize: 16, fontWeight: '800', color: '#525252' },
   cellSuffix: { fontSize: 11, fontWeight: '500', color: COLORS.textMuted },
 
   unitPill: { flexDirection: 'row', backgroundColor: COLORS.primaryLight, borderRadius: 4, padding: 2 },
-  unitSeg: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 3 },
+  unitSeg: { paddingHorizontal: 6, paddingVertical: 4, borderRadius: 3 },
   unitSegActive: { backgroundColor: COLORS.primaryDark },
   unitSegText: { fontSize: 10, fontWeight: '600', color: COLORS.primaryDark },
   unitSegTextActive: { color: '#fff' },

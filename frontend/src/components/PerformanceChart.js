@@ -125,8 +125,9 @@ export default function PerformanceChart({ type, curves = [], current, width = 3
               r={3.5} fill={COLORS.primary}
             />
             <SvgText
-              x={sx(current.value) + 10}
+              x={sx(current.value) > width * 0.75 ? sx(current.value) - 10 : sx(current.value) + 10}
               y={sy(current.da) - 8}
+              textAnchor={sx(current.value) > width * 0.75 ? 'end' : 'start'}
               fontSize={10.5} fill={COLORS.primary} fontWeight="bold"
             >
               {`${current.value} ${type === 'vmax' ? 'kts' : type === 'autorotation-rpm' ? 'rpm' : 'fpm'}`}

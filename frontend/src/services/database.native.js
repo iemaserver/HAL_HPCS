@@ -15,14 +15,15 @@ let _fsReady = null; // null = untested, true/false = result
 const getFS = async () => {
   if (_fsReady === false) return null;
   try {
-    const { File, Directory } = await import('expo-file-system/next');
-    const { documentDirectory } = await import('expo-file-system');
-    const DATA_URI = documentDirectory + 'hal_data/';
-    const dir = new Directory(DATA_URI);
-    if (!dir.exists) dir.create();
+    // SDK 55: the File/Directory/Paths API lives at the package root
+    // ("expo-file-system/next" no longer exists, which silently disabled persistence).
+    const { File, Directory, Paths } = await import('expo-file-system');
+    const dir = new Directory(Paths.document, 'hal_data');
+    if (!dir.exists) dir.create({ idempotent: true, intermediates: true });
     _fsReady = true;
-    return { File, DATA_URI };
-  } catch {
+    return { File, dir };
+  } catch (e) {
+    console.warn('File storage unavailable, using memory only:', e?.message || e);
     _fsReady = false;
     return null;
   }
@@ -32,9 +33,9 @@ const readJson = async (filename, fallback) => {
   const fs = await getFS();
   if (!fs) return fallback;
   try {
-    const file = new fs.File(fs.DATA_URI + filename);
+    const file = new fs.File(fs.dir, filename);
     if (!file.exists) return fallback;
-    return JSON.parse(file.text());
+    return JSON.parse(file.textSync());
   } catch {
     return fallback;
   }
@@ -44,8 +45,12 @@ const writeJson = async (filename, data) => {
   const fs = await getFS();
   if (!fs) return;
   try {
-    new fs.File(fs.DATA_URI + filename).write(JSON.stringify(data));
-  } catch { /* ignore */ }
+    const file = new fs.File(fs.dir, filename);
+    if (!file.exists) file.create();
+    file.write(JSON.stringify(data));
+  } catch (e) {
+    console.warn('Failed to persist', filename, e?.message || e);
+  }
 };
 
 // ── public API ────────────────────────────────────────────────────────────
@@ -133,15 +138,21 @@ export const getDeviceId = async () => {
   const fs = await getFS();
   if (fs) {
     try {
-      const file = new fs.File(fs.DATA_URI + 'device_id.txt');
+      const file = new fs.File(fs.dir, 'device_id.txt');
       if (file.exists) {
-        const id = file.text();
+        const id = file.textSync();
         if (id && id.trim()) { _mem.deviceId = id.trim(); return _mem.deviceId; }
       }
     } catch { /* ignore */ }
   }
   const id = `HAL${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
   _mem.deviceId = id;
-  if (fs) { try { new fs.File(fs.DATA_URI + 'device_id.txt').write(id); } catch { /* ignore */ } }
+  if (fs) {
+    try {
+      const f = new fs.File(fs.dir, 'device_id.txt');
+      if (!f.exists) f.create();
+      f.write(id);
+    } catch { /* ignore */ }
+  }
   return id;
 };

@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
 import {
-  X, Calculator, PlaneTakeoff, FolderClock, Settings, ChevronRight, ChevronDown,
+  X, Calculator, PlaneTakeoff, FolderClock, Settings, SlidersHorizontal, ChevronRight, ChevronDown,
   Gauge, Radar, BookOpen, Mic, ExternalLink,
 } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../constants/theme';
@@ -74,6 +74,13 @@ const NAV_ITEMS = [
     // Full v.03 Default Settings screen (client PPTX slides 7-8), per-aircraft.
     route: '/default-settings',
     Icon: Settings,
+  },
+  {
+    key: 'calc-setup',
+    label: 'Calculation Setup',
+    desc: 'Edit formulas & values (fault-tolerant)',
+    route: '/calc-setup',
+    Icon: SlidersHorizontal,
   },
   {
     key: 'references',

@@ -197,8 +197,8 @@ export default function Results() {
           <DetailCell k="Air Density" v={`${outputs.DENSITY} kg/m³`} />
           <DetailCell k="AB Temperature" v={`${outputs.AB_TEMP} °C`} />
           <DetailCell k="All Up Weight" v={`${outputs.AUW} kg`} />
-          <DetailCell k="Power Available" v={`${outputs.POWER_AVAIL} shp`} />
-          <DetailCell k="Power Required" v={`${outputs.POWER_REQ} shp`} />
+          <DetailCell k="Max Collective Pitch" v={`${outputs.COLLECTIVE_AVAIL}`} />
+          <DetailCell k="Hover Power Required" v={`${outputs.COLLECTIVE_REQ}`} />
         </View>
 
         {/* Save / Share row */}

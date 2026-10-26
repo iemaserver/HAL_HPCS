@@ -179,6 +179,56 @@ export const DEFAULT_AIRCRAFT = {
   },
 };
 
+// Autorotation RPM model constants (fitted to the Lama autorotation chart) — per-aircraft so the
+// client can retune them from Calculation Setup without a code change.
+Object.values(DEFAULT_AIRCRAFT).forEach((a) => {
+  a.autoRpmBase = 320;       // rpm at 1300 kg, density altitude 0
+  a.autoRpmPerKg = 0.088;    // rpm per extra kg of AUW
+  a.autoRpmPer1000ft = 5;    // rpm per 1000 ft of density altitude
+  a.autoRpmColdPerDeg = 2.5; // rpm lost per °C below -10°C OAT
+});
+
+/**
+ * Per-aircraft numeric values the client can tune from the Calculation Setup screen.
+ * min/max are sanity bounds: a value outside them (or not a number) is ignored at calculation
+ * time and the factory default is used instead, so a typo can never break the app.
+ */
+export const CALC_VALUE_FIELDS = [
+  { group: 'Collective pitch', key: 'maxCollectiveSL', label: 'Max collective at sea level', hint: 'Power available. Chetak 0.75, Cheetah/Cheetal 0.80', min: 0.1, max: 3 },
+  { group: 'Collective pitch', key: 'collectiveStep', label: 'Max collective rise per 3300 ft', hint: 'Linear law, 0.05 per 3300 ft', min: 0, max: 1 },
+  { group: 'Collective pitch', key: 'hoverCollectiveSL', label: 'Hover collective required (MAUW, sea level)', hint: 'Used by the default hover-power formula', min: 0.05, max: 3 },
+  { group: 'Collective pitch', key: 'collectiveMax', label: 'Collective reference maximum', hint: 'Scales hover collective into JPT', min: 0.1, max: 5 },
+  { group: 'JPT', key: 'jptBase', label: 'JPT base (°C)', hint: 'JPT at idle', min: 0, max: 1500 },
+  { group: 'JPT', key: 'jptRange', label: 'JPT range (°C)', hint: 'Added from idle to full collective', min: 0, max: 1500 },
+  { group: 'JPT', key: 'jptMax', label: 'JPT limit (°C)', hint: 'Above this the aircraft is NOT FIT', min: 100, max: 1500 },
+  { group: 'Weights', key: 'mauw', label: 'MAUW (kg)', hint: 'Upper AUW limit', min: 500, max: 10000 },
+  { group: 'Weights', key: 'auwLowerThresholdKg', label: 'Lower AUW threshold (kg)', hint: 'Used for "Possible payload" (lower)', min: 500, max: 10000 },
+  { group: 'Auto RPM', key: 'autoRpmBase', label: 'Auto RPM at 1300 kg, 0 ft', hint: 'rpm', min: 100, max: 600 },
+  { group: 'Auto RPM', key: 'autoRpmPerKg', label: 'Auto RPM rise per kg AUW', hint: 'rpm per kg', min: 0, max: 2 },
+  { group: 'Auto RPM', key: 'autoRpmPer1000ft', label: 'Auto RPM rise per 1000 ft', hint: 'rpm per 1000 ft density altitude', min: 0, max: 50 },
+  { group: 'Auto RPM', key: 'autoRpmColdPerDeg', label: 'Auto RPM cold correction', hint: 'rpm lost per °C below -10°C', min: 0, max: 20 },
+  { group: 'Legacy (SHP)', key: 'ratedPowerSHP', label: 'Rated power (shp)', hint: 'Only used by the legacy SHP formulas', min: 1, max: 5000 },
+  { group: 'Legacy (SHP)', key: 'baselinePowerReqSHP', label: 'Baseline power required (shp)', hint: 'Only used by the legacy SHP formulas', min: 1, max: 5000 },
+];
+
+// Returns a copy of `aircraft` where every tunable value is a finite number inside its bounds;
+// anything else is replaced by the factory default. `fixed` lists the keys that were replaced.
+export const sanitizeAircraft = (aircraft) => {
+  const factory = DEFAULT_AIRCRAFT[aircraft?.id] || {};
+  const out = { ...aircraft };
+  const fixed = [];
+  CALC_VALUE_FIELDS.forEach(({ key, min, max }) => {
+    const v = aircraft?.[key];
+    const n = typeof v === 'string' && v.trim() === '' ? NaN : Number(v);
+    if (!Number.isFinite(n) || n < min || n > max) {
+      if (factory[key] !== undefined) { out[key] = factory[key]; fixed.push(key); }
+    } else {
+      out[key] = n;
+    }
+  });
+  return { aircraft: out, fixed };
+};
+
 /* ---------------- UNIT CONVERSION ---------------- */
 export const CONVERSIONS = {
   ft_to_m: 0.3048,
@@ -300,18 +350,80 @@ export const WIZARD_FIELDS = [
 ];
 
 /* ---------------- CALC ENGINE ---------------- */
-const safeEval = (expr, ctx) => {
+// Evaluates one formula; reports failure instead of silently returning 0.
+const tryEval = (expr, ctx) => {
   try {
-    const keys = Object.keys(ctx);
-    const vals = Object.values(ctx);
+    if (typeof expr !== 'string' || !expr.trim()) return { ok: false, error: 'Formula is empty' };
     // eslint-disable-next-line no-new-func
-    const fn = new Function(...keys, `"use strict"; return (${expr});`);
-    const result = fn(...vals);
-    if (typeof result !== 'number' || !isFinite(result)) return 0;
-    return result;
-  } catch {
-    return 0;
+    const fn = new Function(...Object.keys(ctx), `"use strict"; return (${expr});`);
+    const value = fn(...Object.values(ctx));
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return { ok: false, error: 'Result is not a finite number' };
+    }
+    return { ok: true, value };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e?.name === 'SyntaxError'
+        ? 'Syntax error — check brackets, operators and decimal points'
+        : String(e?.message || e),
+    };
   }
+};
+
+// Fault-tolerant evaluation: uses the client's formula; if it throws or gives a non-finite
+// number, falls back to the factory formula (and records the key in `issues`).
+const evalFormula = (key, formulas, ctx, issues) => {
+  const custom = tryEval(formulas?.[key], ctx);
+  if (custom.ok) return custom.value;
+  if (issues && formulas?.[key] !== DEFAULT_FORMULAS[key]) issues.add(key);
+  const factory = tryEval(DEFAULT_FORMULAS[key], ctx);
+  return factory.ok ? factory.value : 0;
+};
+
+const SAMPLE_VARS = {
+  elevation: 1000, qnh: 1013.25, oat: 15, pa: 1000, isa: 13, density_alt: 1000, ab_temp: 2,
+  basic_weight: 1300, equipment_weight: 0, pilot_weight: 70, copilot_weight: 70, empty_weight: 1440,
+  fuel: 460, crew: 0, payload: 0, add_load: 0, auw: 1900, mauw: 2200,
+  rated_power: 550, baseline_power_req: 420, power_avail: 500, power_req: 400,
+  jpt_base: 220, jpt_range: 300, collective_min: 0.15, collective_max: 1.1,
+  max_collective_sl: 0.75, hover_collective_sl: 0.7, collective_step: 0.05,
+  collective_req: 0.6, collective_avail: 0.75,
+};
+
+// Checks a formula before it is saved: must compile, use only the documented variables, and
+// return a finite number for typical sample values.
+export const validateFormula = (key, expr) => {
+  const meta = FORMULA_META.find((m) => m.key === key);
+  if (!meta) return { ok: false, error: 'Unknown formula' };
+  const ctx = {};
+  meta.vars.split(',').map((v) => v.trim()).filter(Boolean).forEach((v) => { ctx[v] = SAMPLE_VARS[v] ?? 1; });
+  const r = tryEval(expr, ctx);
+  if (!r.ok) {
+    const m = /(\w+) is not defined/.exec(r.error);
+    return { ok: false, error: m ? `Unknown variable "${m[1]}". Allowed: ${meta.vars}` : r.error };
+  }
+  return { ok: true, sample: r.value };
+};
+
+// Keeps only saved formulas that still validate; everything else reverts to the factory formula.
+export const sanitizeFormulas = (saved) => {
+  const out = { ...DEFAULT_FORMULAS };
+  Object.keys(DEFAULT_FORMULAS).forEach((k) => {
+    const expr = saved?.[k];
+    if (typeof expr === 'string' && expr !== DEFAULT_FORMULAS[k] && validateFormula(k, expr).ok) out[k] = expr;
+  });
+  return out;
+};
+
+// Only the formulas that differ from factory — this is what gets persisted, so a later
+// change to a factory formula still reaches formulas the client never touched.
+export const formulaOverrides = (formulas) => {
+  const o = {};
+  Object.keys(DEFAULT_FORMULAS).forEach((k) => {
+    if (formulas?.[k] !== undefined && formulas[k] !== DEFAULT_FORMULAS[k]) o[k] = formulas[k];
+  });
+  return o;
 };
 
 const round = (n, p = 2) => Math.round(n * Math.pow(10, p)) / Math.pow(10, p);
@@ -355,7 +467,11 @@ const interpolateChartValue = (aircraft, pa, key) => {
 };
 
 export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
-  const { aircraft } = inputs;
+  // Fault tolerance: invalid client values fall back to factory defaults, and a formula that
+  // fails falls back to the factory formula — the app always produces a result.
+  const { aircraft, fixed: fixedValues } = sanitizeAircraft(inputs.aircraft);
+  const issues = new Set();
+  const ev = (key, ctx) => evalFormula(key, formulas, ctx, issues);
 
   const baseCtx = {
     elevation: Number(inputs.elevation) || 0,
@@ -384,30 +500,26 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     baseline_power_req: aircraft.baselinePowerReqSHP,
   };
 
-  const PA = safeEval(formulas.PA, baseCtx);
-  const ISA_TEMP = safeEval(formulas.ISA_TEMP, { ...baseCtx, pa: PA });
-  const DENSITY_ALT_RAW = safeEval(formulas.DENSITY_ALT, { ...baseCtx, pa: PA, isa: ISA_TEMP });
+  const PA = ev('PA', baseCtx);
+  const ISA_TEMP = ev('ISA_TEMP', { ...baseCtx, pa: PA });
+  const DENSITY_ALT_RAW = ev('DENSITY_ALT', { ...baseCtx, pa: PA, isa: ISA_TEMP });
   // Placeholder chart correction (see interpolateChartValue above) — 0 unless Zσ1-4 entered.
   const ZSIGMA_CORRECTION = interpolateChartValue(aircraft, PA, 'zSigma');
   const DENSITY_ALT = DENSITY_ALT_RAW + ZSIGMA_CORRECTION;
-  const DENSITY = safeEval(formulas.DENSITY, { ...baseCtx, pa: PA });
-  const AB_TEMP = safeEval(formulas.AB_TEMP, { ...baseCtx, isa: ISA_TEMP });
-  const EMPTY_WEIGHT = safeEval(formulas.EMPTY_WEIGHT, baseCtx);
-  const AUW = safeEval(formulas.AUW, { ...baseCtx, empty_weight: EMPTY_WEIGHT });
-  const POWER_AVAIL_RAW = safeEval(formulas.POWER_AVAIL, {
+  const DENSITY = ev('DENSITY', { ...baseCtx, pa: PA });
+  const AB_TEMP = ev('AB_TEMP', { ...baseCtx, isa: ISA_TEMP });
+  const EMPTY_WEIGHT = ev('EMPTY_WEIGHT', baseCtx);
+  const AUW = ev('AUW', { ...baseCtx, empty_weight: EMPTY_WEIGHT });
+  const POWER_AVAIL_RAW = ev('POWER_AVAIL', {
     ...baseCtx, density_alt: DENSITY_ALT, auw: AUW,
   });
   // Placeholder Ageing Coefficient derating (see block comment above) — treated as a percent
   // power derating; 0 unless the user has entered a non-zero Ageing Coefficient.
   const ageingFactor = Math.max(0, 1 - (Number(aircraft.ageingCoefficient) || 0) / 100);
   const POWER_AVAIL = POWER_AVAIL_RAW * ageingFactor;
-  const POWER_REQ = safeEval(formulas.POWER_REQ, {
+  const POWER_REQ = ev('POWER_REQ', {
     ...baseCtx, density_alt: DENSITY_ALT, auw: AUW,
   });
-
-  const POWER_BALANCE_PCT = POWER_AVAIL > 0
-    ? Math.round(((POWER_AVAIL - POWER_REQ) / POWER_AVAIL) * 100)
-    : 0;
 
   const AUW_MARGIN = aircraft.mauw - AUW;
   const powerHeadroomFactor = POWER_REQ > 0
@@ -438,15 +550,15 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
   };
   // Placeholder chart correction (see interpolateChartValue above) — 0 unless Dθ1-4 entered.
   const DTHETA_CORRECTION = interpolateChartValue(aircraft, PA, 'dTheta');
-  const COLLECTIVE_REQ = safeEval(formulas.COLLECTIVE_REQ, collectiveCtx) + DTHETA_CORRECTION;
-  const COLLECTIVE_AVAIL = safeEval(formulas.COLLECTIVE_AVAIL, collectiveCtx);
-  const COLLECTIVE_BALANCE = safeEval(formulas.COLLECTIVE_BALANCE, {
+  const COLLECTIVE_REQ = ev('COLLECTIVE_REQ', collectiveCtx) + DTHETA_CORRECTION;
+  const COLLECTIVE_AVAIL = ev('COLLECTIVE_AVAIL', collectiveCtx);
+  const COLLECTIVE_BALANCE = ev('COLLECTIVE_BALANCE', {
     ...collectiveCtx,
     collective_req: COLLECTIVE_REQ,
     collective_avail: COLLECTIVE_AVAIL,
   });
 
-  const JPT_RAW = safeEval(formulas.JPT, {
+  const JPT_RAW = ev('JPT', {
     ...baseCtx,
     power_req: POWER_REQ,
     collective_req: COLLECTIVE_REQ,
@@ -459,6 +571,11 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
   // Placeholder JPT Correction (see block comment above) — treated as a direct additive
   // offset; 0 unless the user has entered a non-zero JPT Correction.
   const JPT = JPT_RAW + (Number(aircraft.jptCorrection) || 0);
+
+  // Margin of max collective over hover collective required (collective-based, not SHP).
+  const POWER_BALANCE_PCT = COLLECTIVE_AVAIL > 0
+    ? Math.round(((COLLECTIVE_AVAIL - COLLECTIVE_REQ) / COLLECTIVE_AVAIL) * 100)
+    : 0;
 
   // Fit to Fly checks (0.01 precision)
   const reasons = [];
@@ -491,6 +608,15 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     warnings.push('JPT Correction applied — uses an unverified additive-offset formula, not yet confirmed by the client.');
   }
 
+  issues.forEach((k) => {
+    const label = FORMULA_META.find((m) => m.key === k)?.label ?? k;
+    warnings.push(`Custom formula "${label}" failed — the factory formula was used instead.`);
+  });
+  fixedValues.forEach((k) => {
+    const label = CALC_VALUE_FIELDS.find((f) => f.key === k)?.label ?? k;
+    warnings.push(`Value "${label}" was invalid — the factory default was used instead.`);
+  });
+
   return {
     PA: round(PA),
     ISA_TEMP: round(ISA_TEMP),
@@ -518,11 +644,12 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
 
 /* ---------------- AUW vs ALTITUDE LIMIT CURVE (hover ceiling) ---------------- */
 export const buildAUWvsAltitudeCurve = (aircraft, formulas = DEFAULT_FORMULAS) => {
+  const ev = (key, ctx) => evalFormula(key, formulas, ctx);
   const points = [];
   for (let altK = 0; altK <= 20; altK += 1) {
     const pa = altK * 1000;
     const densityAlt = pa;
-    const pAvail = safeEval(formulas.POWER_AVAIL, {
+    const pAvail = ev('POWER_AVAIL', {
       rated_power: aircraft.ratedPowerSHP,
       density_alt: densityAlt,
     });
@@ -574,15 +701,13 @@ export const computeROCFpm = (aircraft, da_ft, auw_kg) =>
 //   slope     ≈ 5 rpm per 1000 ft of density altitude
 // Check against the chart's worked example (1500 kg, Hd 9500 ft, OAT -10°C → 385 rpm): 386.
 // Chart note: below -10°C reduce by 5 rpm per 2°C decrement. Clamped to the 270-420 band.
-const AUTO_RPM_BASE_AT_1300KG = 320;
-const AUTO_RPM_PER_KG = 0.088;
-const AUTO_RPM_PER_1000FT = 5;
 export const computeAutorotationRPM = (aircraft, da_ft = 0, auw_kg = 1300, oat_c = 15) => {
   const [rpmMin, rpmMax] = aircraft.autorotationRPMRange ?? [270, 420];
-  let rpm = AUTO_RPM_BASE_AT_1300KG
-    + AUTO_RPM_PER_KG * (auw_kg - 1300)
-    + AUTO_RPM_PER_1000FT * (da_ft / 1000);
-  if (oat_c < -10) rpm -= 2.5 * (-10 - oat_c);
+  const { aircraft: ac } = sanitizeAircraft(aircraft);
+  let rpm = ac.autoRpmBase
+    + ac.autoRpmPerKg * (auw_kg - 1300)
+    + ac.autoRpmPer1000ft * (da_ft / 1000);
+  if (oat_c < -10) rpm -= ac.autoRpmColdPerDeg * (-10 - oat_c);
   return Math.round(Math.min(rpmMax, Math.max(rpmMin, rpm)));
 };
 
@@ -654,16 +779,17 @@ export const buildAltitudeTempTable = (aircraft) => {
 // above-ISA deviation constant. Reuses the already-computed formulas verbatim; no new
 // physics is introduced.
 export const buildJPTvsDACurve = (aircraft, abTemp, auwKg, formulas = DEFAULT_FORMULAS) => {
+  const ev = (key, ctx) => evalFormula(key, formulas, ctx);
   const points = [];
   for (let da = 0; da <= 20000; da += 1000) {
-    const collective_req = safeEval(formulas.COLLECTIVE_REQ, {
+    const collective_req = ev('COLLECTIVE_REQ', {
       hover_collective_sl: aircraft.hoverCollectiveSL ?? 0.7,
       collective_step: aircraft.collectiveStep ?? 0.05,
       auw: auwKg,
       mauw: aircraft.mauw,
       density_alt: da,
     });
-    const jpt = safeEval(formulas.JPT, {
+    const jpt = ev('JPT', {
       collective_req,
       collective_max: aircraft.collectiveMax ?? 1.1,
       jpt_base: aircraft.jptBase ?? 600,

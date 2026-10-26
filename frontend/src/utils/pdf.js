@@ -424,12 +424,12 @@ export const buildReportHtml = (report) => {
       <div class="v">${outputs.AUW ?? '-'}<span class="u">kg</span></div>
     </div>
     <div class="perf-card hl">
-      <div class="k">Power Available</div>
-      <div class="v">${outputs.POWER_AVAIL ?? '-'}<span class="u">shp</span></div>
+      <div class="k">Max Collective Pitch</div>
+      <div class="v">${outputs.COLLECTIVE_AVAIL ?? '-'}</div>
     </div>
     <div class="perf-card ${isFit ? '' : 'warn'}">
-      <div class="k">Power Required</div>
-      <div class="v">${outputs.POWER_REQ ?? '-'}<span class="u">shp</span></div>
+      <div class="k">Hover Power Required</div>
+      <div class="v">${outputs.COLLECTIVE_REQ ?? '-'}</div>
     </div>
   </div>
 

@@ -7,6 +7,8 @@ import {
   DEFAULT_AIRCRAFT,
   DEFAULT_FORMULAS,
   computePerformance,
+  sanitizeFormulas,
+  formulaOverrides,
 } from '../constants/logic';
 import {
   loadAircraftDefaults,
@@ -55,7 +57,8 @@ export const AppStateProvider = ({ children }) => {
           loadSession(),
         ]);
         setAircraftDefaults(ad);
-        setFormulas(f);
+        // Saved formulas that no longer validate silently revert to the factory formula.
+        setFormulas(sanitizeFormulas(f));
         if (session) {
           if (session.selectedAircraftId) setSelectedAircraftId(session.selectedAircraftId);
           if (session.units) setUnits((prev) => ({ ...prev, ...session.units }));
@@ -86,9 +89,11 @@ export const AppStateProvider = ({ children }) => {
     await saveAircraftDefaults(d);
   };
 
+  // Persist only the formulas that differ from factory (see formulaOverrides).
   const updateFormulas = async (f) => {
-    setFormulas(f);
-    await saveFormulas(f);
+    const clean = sanitizeFormulas(f);
+    setFormulas(clean);
+    await saveFormulas(formulaOverrides(clean));
   };
 
   const resetInputsToDefaults = () => {
