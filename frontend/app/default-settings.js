@@ -51,6 +51,17 @@ const VOICE_FIELDS = [
   { key: 'dTheta4', label: 'Dθ4', aliases: ['d theta four', 'dtheta4', 'd theta 4'] },
 ];
 
+// Units a field accepts when spoken ("elevation 500 meters").
+const VOICE_UNITS = {
+  defaultElevation: ['ft', 'm'],
+  basicWeight: ['kg', 'lb'],
+  pilotWeight: ['kg', 'lb'],
+  copilotWeight: ['kg', 'lb'],
+  equipmentWeight: ['kg', 'lb'],
+  defaultQNH: ['hPa', 'mmHg'],
+  defaultTemp: ['C', 'F'],
+};
+
 // Fields that only render on one of the two pages — saying their name auto-navigates
 // there before committing. zp0/t0 are editable on BOTH pages so they're omitted here
 // (no forced switch needed either way).
@@ -224,49 +235,62 @@ export default function DefaultSettings() {
   // Voice control: a matched field's spoken number is in whatever unit is currently
   // DISPLAYED for that field — convert to base units exactly like each EditableCell's
   // own onCommit does before storing.
-  const onCommitValue = (key, raw) => {
+  const onUnitChange = (key, unit) => {
+    const setters = {
+      defaultElevation: setElevationUnit,
+      basicWeight: setBasicWeightUnit,
+      pilotWeight: setPilotWeightUnit,
+      copilotWeight: setCopilotWeightUnit,
+      equipmentWeight: setEquipmentWeightUnit,
+      defaultQNH: setQnhUnit,
+      defaultTemp: setTemperatureUnit,
+    };
+    setters[key]?.(unit);
+  };
+
+  const onCommitValue = (key, raw, unit) => {
     const targetPage = VOICE_FIELD_PAGE[key];
     if (targetPage && targetPage !== page) setPage(targetPage);
 
     switch (key) {
       case 'defaultElevation':
-        commitElevation(toBaseUnit(raw, elevationUnit));
+        commitElevation(toBaseUnit(raw, unit ?? elevationUnit));
         break;
       case 'basicWeight':
-        patchAircraft({ basicWeight: toBaseUnit(raw, basicWeightUnit) });
+        patchAircraft({ basicWeight: toBaseUnit(raw, unit ?? basicWeightUnit) });
         break;
       case 'pilotWeight':
-        patchAircraft({ pilotWeight: toBaseUnit(raw, pilotWeightUnit) });
+        patchAircraft({ pilotWeight: toBaseUnit(raw, unit ?? pilotWeightUnit) });
         break;
       case 'copilotWeight':
-        patchAircraft({ copilotWeight: toBaseUnit(raw, copilotWeightUnit) });
+        patchAircraft({ copilotWeight: toBaseUnit(raw, unit ?? copilotWeightUnit) });
         break;
       case 'equipmentWeight':
-        patchAircraft({ equipmentWeight: toBaseUnit(raw, equipmentWeightUnit) });
+        patchAircraft({ equipmentWeight: toBaseUnit(raw, unit ?? equipmentWeightUnit) });
         break;
       case 'ageingCoefficient':
-        patchAircraft({ ageingCoefficient: toBaseUnit(raw, ageingUnit) });
+        patchAircraft({ ageingCoefficient: toBaseUnit(raw, unit ?? ageingUnit) });
         break;
       case 'jptCorrection':
-        patchAircraft({ jptCorrection: toBaseUnit(raw, jptCorrUnit) });
+        patchAircraft({ jptCorrection: toBaseUnit(raw, unit ?? jptCorrUnit) });
         break;
       case 'defaultQNH':
-        patchAircraft({ defaultQNH: toBaseUnit(raw, qnhUnit) });
+        patchAircraft({ defaultQNH: toBaseUnit(raw, unit ?? qnhUnit) });
         break;
       case 'defaultTemp':
-        patchAircraft({ defaultTemp: toBaseUnit(raw, temperatureUnit) });
+        patchAircraft({ defaultTemp: toBaseUnit(raw, unit ?? temperatureUnit) });
         break;
       case 'zp0':
-        patchAircraft({ zp0: toBaseUnit(raw, zp0Unit) });
+        patchAircraft({ zp0: toBaseUnit(raw, unit ?? zp0Unit) });
         break;
       case 't0':
-        patchAircraft({ t0: toBaseUnit(raw, t0Unit) });
+        patchAircraft({ t0: toBaseUnit(raw, unit ?? t0Unit) });
         break;
       case 'zSigma1':
       case 'zSigma2':
       case 'zSigma3':
       case 'zSigma4':
-        patchAircraft({ [key]: toBaseUnit(raw, zSigmaUnit) });
+        patchAircraft({ [key]: toBaseUnit(raw, unit ?? zSigmaUnit) });
         break;
       case 'dTheta1':
       case 'dTheta2':
@@ -297,7 +321,8 @@ export default function DefaultSettings() {
   ];
 
   const { listening, toggle } = useVoiceFieldControl({
-    fields: VOICE_FIELDS, options: voiceOptions, onCommitValue, micEnabled,
+    fields: VOICE_FIELDS.map((f) => ({ ...f, units: VOICE_UNITS[f.key] })),
+    options: voiceOptions, onCommitValue, onUnitChange, micEnabled,
   });
 
   return (

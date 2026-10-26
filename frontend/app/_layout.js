@@ -24,6 +24,7 @@ export default function RootLayout() {
             <Stack.Screen name="performance-data" />
             <Stack.Screen name="default-settings" />
             <Stack.Screen name="calc-setup" />
+            <Stack.Screen name="graphs" />
           </Stack>
           <Toast />
         </AppStateProvider>

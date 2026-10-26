@@ -51,6 +51,17 @@ function UnitPill({ options, active, onSelect }) {
   );
 }
 
+// Units a field accepts when spoken ("elevation 500 meters"). Used by the voice hook.
+const VOICE_UNITS = {
+  elevation: ['ft', 'm'],
+  qnh: ['hPa', 'mmHg'],
+  temperature: ['C', 'F'],
+  load: ['kg', 'lb'],
+  passengerWeight: ['kg', 'lb'],
+  fuel: ['L'],
+};
+const withUnits = (fields) => fields.map((f) => ({ ...f, units: VOICE_UNITS[f.key] }));
+
 // ── Editable field cell — bound to a live AppState input (elevation, QNH, weights…) ──
 function EditableCell({ label, required, value, unit, unitOptions, onCommit, onUnitChange, testID }) {
   const derive = (v, u) => (v !== null && v !== undefined ? String(round2(fromBaseUnit(v, u))) : '');
@@ -159,7 +170,7 @@ export default function PerformanceData() {
     },
     { key: 'fuel', label: 'Fuel', aliases: ['fuel liters', 'fuel litres'] },
     ...(metric === 'vmax'
-      ? [{ key: 'cruisePower', label: 'Cruise Power', aliases: ['cruise', 'cruising power'] }]
+      ? [{ key: 'cruisePower', label: 'Cruise Collective Pitch', aliases: ['cruise collective', 'cruise pitch', 'cruise power', 'cruise'] }]
       : []),
   ];
 
@@ -174,22 +185,33 @@ export default function PerformanceData() {
     },
   ];
 
-  const onCommitValue = (key, n) => {
+  const onUnitChange = (key, unit) => {
+    const setters = {
+      elevation: setElevationUnit,
+      qnh: setQnhUnit,
+      temperature: setTemperatureUnit,
+      load: setLoadUnit,
+      passengerWeight: setPassengerWeightUnit,
+    };
+    setters[key]?.(unit);
+  };
+
+  const onCommitValue = (key, n, unit) => {
     switch (key) {
       case 'elevation':
-        setInputs({ elevation: toBaseUnit(n, elevationUnit) });
+        setInputs({ elevation: toBaseUnit(n, unit ?? elevationUnit) });
         break;
       case 'qnh':
-        setInputs({ qnh: toBaseUnit(n, qnhUnit) });
+        setInputs({ qnh: toBaseUnit(n, unit ?? qnhUnit) });
         break;
       case 'temperature':
-        setInputs({ temperature: toBaseUnit(n, temperatureUnit) });
+        setInputs({ temperature: toBaseUnit(n, unit ?? temperatureUnit) });
         break;
       case 'load':
-        setInputs({ payload: toBaseUnit(n, loadUnit) });
+        setInputs({ payload: toBaseUnit(n, unit ?? loadUnit) });
         break;
       case 'passengerWeight':
-        setInputs({ crewWeight: toBaseUnit(n, passengerWeightUnit) });
+        setInputs({ crewWeight: toBaseUnit(n, unit ?? passengerWeightUnit) });
         break;
       case 'fuel':
         // Fuel's EditableCell has unit="L" (truthy), so its own commit() already runs
@@ -207,7 +229,7 @@ export default function PerformanceData() {
   };
 
   const { listening, toggle: toggleVoice } = useVoiceFieldControl({
-    fields: voiceFields, options: voiceOptions, onCommitValue, micEnabled,
+    fields: withUnits(voiceFields), options: voiceOptions, onCommitValue, onUnitChange, micEnabled,
   });
 
   const curves = useMemo(

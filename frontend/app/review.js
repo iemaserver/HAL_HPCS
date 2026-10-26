@@ -4,7 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import {
-  ChevronLeft, Mountain, Thermometer, Fuel, Package, User, Gauge, Weight, Zap,
+  ChevronLeft, Mountain, Thermometer, Fuel, Package, User, Gauge, Weight,
 } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
@@ -115,16 +115,7 @@ export default function Review() {
         </View>
         <View style={styles.previewGrid}>
           <PreviewCell k="ISA Temp" v={`${outputs.ISA_TEMP} °C`} />
-          <PreviewCell k="Air Density" v={`${outputs.DENSITY} kg/m³`} />
-          <PreviewCell k="AB Temp" v={`${outputs.AB_TEMP} °C`} />
           <PreviewCell k="All Up Weight" v={`${outputs.AUW} kg`} />
-        </View>
-        <View style={styles.powerRatioCard}>
-          <Zap size={16} color={COLORS.primaryDark} />
-          <Text style={styles.powerRatioLabel}>Power Balance</Text>
-          <Text style={styles.powerRatioValue}>
-            {outputs.POWER_BALANCE_PCT >= 0 ? '+' : ''}{outputs.POWER_BALANCE_PCT}%
-          </Text>
         </View>
       </ScrollView>
 

@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
 import {
-  X, Calculator, PlaneTakeoff, FolderClock, Settings, SlidersHorizontal, ChevronRight, ChevronDown,
+  X, Calculator, PlaneTakeoff, FolderClock, Settings, SlidersHorizontal, LineChart, ChevronRight, ChevronDown,
   Gauge, Radar, BookOpen, Mic, ExternalLink,
 } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../constants/theme';
@@ -57,6 +57,13 @@ const NAV_ITEMS = [
         // autorotation band — see computeAutorotationRPM() in logic.js.
       },
     ],
+  },
+  {
+    key: 'graphs',
+    label: 'Aircraft Graphs',
+    desc: 'Flight-manual graph sheets (zoomable)',
+    route: '/graphs',
+    Icon: LineChart,
   },
   {
     key: 'flight-testing',

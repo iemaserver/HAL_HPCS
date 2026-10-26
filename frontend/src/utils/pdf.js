@@ -254,11 +254,6 @@ export const buildReportHtml = (report) => {
     hour: '2-digit', minute: '2-digit', hour12: true,
   });
 
-  // Derived margin = power available - power required
-  const pMargin = (outputs.POWER_AVAIL != null && outputs.POWER_REQ != null)
-    ? (outputs.POWER_AVAIL - outputs.POWER_REQ).toFixed(2)
-    : '-';
-
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -374,9 +369,9 @@ export const buildReportHtml = (report) => {
         <tbody>
           <tr><td class="lbl">Aircraft Type</td><td class="sep"></td><td class="val">${aircraft.name || '-'}</td></tr>
           <tr><td class="lbl">MAUW</td><td class="sep"></td><td class="val">${aircraft.mauw || '-'} kg</td></tr>
-          <tr><td class="lbl">Rated Power</td><td class="sep"></td><td class="val">${aircraft.ratedPowerSHP || '-'} shp</td></tr>
+          <tr><td class="lbl">Max Collective (SL)</td><td class="sep"></td><td class="val">${aircraft.maxCollectiveSL ?? '-'}</td></tr>
           <tr><td class="lbl">Elevation (QFE)</td><td class="sep"></td><td class="val">${inputs.elevation ?? '-'} ft</td></tr>
-          <tr><td class="lbl">QNH</td><td class="sep"></td><td class="val">${inputs.qnh ?? '-'} hPa</td></tr>
+          <tr><td class="lbl">QNH</td><td class="sep"></td><td class="val">${inputs.qnh ?? '-'} mb</td></tr>
           <tr><td class="lbl">OAT</td><td class="sep"></td><td class="val">${inputs.temperature ?? '-'} °C</td></tr>
         </tbody>
       </table>
@@ -410,14 +405,6 @@ export const buildReportHtml = (report) => {
     <div class="perf-card">
       <div class="k">ISA Temperature</div>
       <div class="v">${outputs.ISA_TEMP ?? '-'}<span class="u">°C</span></div>
-    </div>
-    <div class="perf-card">
-      <div class="k">AB Temperature</div>
-      <div class="v">${outputs.AB_TEMP ?? '-'}<span class="u">°C</span></div>
-    </div>
-    <div class="perf-card">
-      <div class="k">Air Density</div>
-      <div class="v">${outputs.DENSITY ?? '-'}<span class="u">kg/m³</span></div>
     </div>
     <div class="perf-card">
       <div class="k">All Up Weight</div>

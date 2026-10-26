@@ -73,9 +73,17 @@ export default function Airframe() {
   // selection changes, so idling on a newly-selected card still gets its own full
   // 2 seconds. It is a separate, longer mechanism from the tap-driven fast path
   // below — `navigatedRef` above ensures only one of the two ever actually navigates.
+  // While the mic is listening the user is about to speak an aircraft name; a spoken result
+  // takes a moment to arrive, so the idle auto-advance waits instead of racing it.
+  const listeningFlagRef = useRef(false);
   useEffect(() => {
-    const idleTimeout = setTimeout(goToCalculator, 2000);
-    return () => clearTimeout(idleTimeout);
+    let t;
+    const idleNav = () => {
+      if (listeningFlagRef.current) { t = setTimeout(idleNav, 3000); return; }
+      goToCalculator();
+    };
+    t = setTimeout(idleNav, 2000);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAircraftId]);
 
@@ -120,7 +128,9 @@ export default function Airframe() {
       },
     ],
     micEnabled,
+    fireOptionsOnInterim: true, // pick the aircraft the moment its name is heard
   });
+  listeningFlagRef.current = listening;
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="airframe-screen">

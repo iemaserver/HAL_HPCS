@@ -124,7 +124,7 @@ export default function Reports() {
               <View style={styles.kv}>
                 <KV k="AUW" v={`${r.payload?.outputs?.AUW} kg`} />
                 <KV k="PA" v={`${r.payload?.outputs?.PA} ft`} />
-                <KV k="Pwr Bal" v={`${r.payload?.outputs?.POWER_BALANCE_PCT}%`} />
+                <KV k="Hover Pwr" v={`${r.payload?.outputs?.COLLECTIVE_REQ ?? '-'}`} />
               </View>
 
               <View style={{ flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.md }}>

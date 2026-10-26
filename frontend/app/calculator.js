@@ -28,6 +28,21 @@ const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const UNIT_LABELS = { ft: 'ft', m: 'm', C: '°C', F: '°F', kg: 'Kg', lb: 'Lb', hPa: 'mb', mmHg: 'mmHg', L: 'Lt' };
 const fmtUnit = (u) => UNIT_LABELS[u] ?? u;
 
+// Units a field accepts when spoken ("elevation 500 meters"). Used by the voice hook.
+const VOICE_UNITS = {
+  elevation: ['ft', 'm'],
+  qnh: ['hPa', 'mmHg'],
+  temperature: ['C', 'F'],
+  aircraftWeight: ['kg', 'lb'],
+  equipmentWeight: ['kg', 'lb'],
+  pilotWeight: ['kg', 'lb'],
+  copilotWeight: ['kg', 'lb'],
+  passengerWeight: ['kg', 'lb'],
+  load: ['kg', 'lb'],
+  fuel: ['L'],
+};
+const withUnits = (fields) => fields.map((f) => ({ ...f, units: VOICE_UNITS[f.key] }));
+
 // ── Segmented unit pill ──
 function UnitPill({ options, active, onSelect }) {
   return (
@@ -333,31 +348,46 @@ export default function Calculator() {
     { key: 'reset', label: 'Reset', onSelect: doReset },
   ];
 
-  const onCommitValue = (key, n) => {
+  const onUnitChange = (key, unit) => {
+    const setters = {
+      elevation: setElevationUnit,
+      qnh: setQnhUnit,
+      temperature: setTemperatureUnit,
+      aircraftWeight: setBasicWeightUnit,
+      equipmentWeight: setEquipmentWeightUnit,
+      pilotWeight: setPilotWeightUnit,
+      copilotWeight: setCopilotWeightUnit,
+      passengerWeight: setPassengerWeightUnit,
+      load: setLoadUnit,
+    };
+    setters[key]?.(unit);
+  };
+
+  const onCommitValue = (key, n, unit) => {
     switch (key) {
       case 'elevation':
-        commitElevation(toBaseUnit(n, elevationUnit));
+        commitElevation(toBaseUnit(n, unit ?? elevationUnit));
         break;
       case 'qnh':
-        setInputs({ qnh: toBaseUnit(n, qnhUnit) });
+        setInputs({ qnh: toBaseUnit(n, unit ?? qnhUnit) });
         break;
       case 'temperature':
-        setInputs({ temperature: toBaseUnit(n, temperatureUnit) });
+        setInputs({ temperature: toBaseUnit(n, unit ?? temperatureUnit) });
         break;
       case 'aircraftWeight':
-        patchAircraft({ basicWeight: toBaseUnit(n, basicWeightUnit) });
+        patchAircraft({ basicWeight: toBaseUnit(n, unit ?? basicWeightUnit) });
         break;
       case 'equipmentWeight':
-        patchAircraft({ equipmentWeight: toBaseUnit(n, equipmentWeightUnit) });
+        patchAircraft({ equipmentWeight: toBaseUnit(n, unit ?? equipmentWeightUnit) });
         break;
       case 'pilotWeight':
-        patchAircraft({ pilotWeight: toBaseUnit(n, pilotWeightUnit) });
+        patchAircraft({ pilotWeight: toBaseUnit(n, unit ?? pilotWeightUnit) });
         break;
       case 'copilotWeight':
-        patchAircraft({ copilotWeight: toBaseUnit(n, copilotWeightUnit) });
+        patchAircraft({ copilotWeight: toBaseUnit(n, unit ?? copilotWeightUnit) });
         break;
       case 'passengerWeight':
-        setInputs({ crewWeight: toBaseUnit(n, passengerWeightUnit) });
+        setInputs({ crewWeight: toBaseUnit(n, unit ?? passengerWeightUnit) });
         break;
       case 'fuel':
         // Fuel's EditableCell has unit="L" (truthy), so its own commit() already runs
@@ -365,7 +395,7 @@ export default function Calculator() {
         setInputs({ fuel: toBaseUnit(n, 'L') });
         break;
       case 'load':
-        setInputs({ payload: toBaseUnit(n, loadUnit) });
+        setInputs({ payload: toBaseUnit(n, unit ?? loadUnit) });
         break;
       default:
         break;
@@ -375,7 +405,7 @@ export default function Calculator() {
   const {
     listening, activeFieldKey, toggle: toggleVoice,
   } = useVoiceFieldControl({
-    fields: voiceFields, options: voiceOptions, onCommitValue, micEnabled,
+    fields: withUnits(voiceFields), options: voiceOptions, onCommitValue, onUnitChange, micEnabled,
   });
 
   const lowerLb = Math.round((aircraft.auwLowerThresholdKg ?? aircraft.mauw) * CONVERSIONS.kg_to_lb);
@@ -595,10 +625,10 @@ export default function Calculator() {
         {/* ── ACTIONS ── */}
         <TouchableOpacity
           style={[styles.actionBtn, styles.chartsBtn]}
-          onPress={() => router.push('/results')}
+          onPress={() => router.push('/performance-data')}
         >
           <BarChart2 size={16} color={COLORS.primaryDark} />
-          <Text style={styles.chartsBtnText}>View Performance Charts</Text>
+          <Text style={styles.chartsBtnText}>View Performance Data</Text>
         </TouchableOpacity>
 
         <View style={styles.actionRow}>
