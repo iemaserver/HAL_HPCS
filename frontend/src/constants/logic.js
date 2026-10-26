@@ -80,6 +80,13 @@ export const DEFAULT_AIRCRAFT = {
     jptBase: 220,   // °C — calibrated so default-condition JPT lands ~380-450°C (client spec)
     jptRange: 300,  // °C added from idle to rated power
     jptMax: 500,    // °C — real T4 limit (SA315B/SA316B flight manual: "T4 not to exceed 500°C")
+    // Client correction 12-Oct-26: Max collective (power available) at sea level, rising
+    // linearly by `collectiveStep` for every 3300 ft of density altitude.
+    maxCollectiveSL: 0.75,
+    collectiveStep: 0.05,
+    // Hover collective required at MAUW, sea level — PLACEHOLDER pending the client's hover
+    // power formula (to be confirmed on phone). Sits 0.05 below max collective available.
+    hoverCollectiveSL: 0.70,
     collectiveMin: 0.15,  // dimensionless pitch indicator, low/autorotation-entry
     collectiveMax: 1.10,  // dimensionless pitch indicator, near hover/rated-power limit
     idealAutorotationRPM: 353,      // Nr, 100% — real flight-manual figure (both Chetak/Cheetah)
@@ -117,6 +124,9 @@ export const DEFAULT_AIRCRAFT = {
     jptBase: 220,
     jptRange: 300,
     jptMax: 500,   // same Artouste IIIB T4 limit as Chetak
+    maxCollectiveSL: 0.80,
+    collectiveStep: 0.05,
+    hoverCollectiveSL: 0.75, // PLACEHOLDER — see Chetak note
     collectiveMin: 0.15,
     collectiveMax: 1.10,  // same rotor/pitch convention as SA316B (shared Lama/Alouette III system)
     idealAutorotationRPM: 353,      // same rotor system as Chetak — same real Nr
@@ -155,6 +165,9 @@ export const DEFAULT_AIRCRAFT = {
     jptBase: 220,
     jptRange: 300,
     jptMax: 500,
+    maxCollectiveSL: 0.80,
+    collectiveStep: 0.05,
+    hoverCollectiveSL: 0.75, // PLACEHOLDER — see Chetak note
     collectiveMin: 0.15,
     collectiveMax: 1.10,  // same Lama/Cheetah-derived rotor & pitch convention (re-engined only)
     idealAutorotationRPM: 353,      // same rotor system as Cheetah (re-engined, rotor unchanged)
@@ -176,6 +189,10 @@ export const CONVERSIONS = {
   F_to_C: (f) => ((f - 32) * 5) / 9,
   hPa_to_inHg: 0.02953,
   inHg_to_hPa: 33.8639,
+  // 1 mmHg = 1.33322 hPa (760 mmHg = 1013.25 hPa). The old 'inHg' code was mislabelled
+  // 'mmHg' in the UI, so QNH 760 showed as ~29.
+  mmHg_to_hPa: 1.33322,
+  hPa_to_mmHg: 0.750062,
 };
 
 export const toBaseUnit = (value, unit) => {
@@ -189,6 +206,7 @@ export const toBaseUnit = (value, unit) => {
     case 'L': return value * 0.8; // Avtur/Jet-A density ≈ 0.800 kg/L
     case 'hPa': return value;
     case 'inHg': return value * CONVERSIONS.inHg_to_hPa;
+    case 'mmHg': return value * CONVERSIONS.mmHg_to_hPa;
     default: return value;
   }
 };
@@ -204,6 +222,7 @@ export const fromBaseUnit = (value, unit) => {
     case 'L': return value / 0.8; // Avtur/Jet-A density ≈ 0.800 kg/L
     case 'hPa': return value;
     case 'inHg': return value * CONVERSIONS.hPa_to_inHg;
+    case 'mmHg': return value * CONVERSIONS.hPa_to_mmHg;
     default: return value;
   }
 };
@@ -235,11 +254,14 @@ export const DEFAULT_FORMULAS = {
   // Power Required (shp) - scales with AUW & density altitude
   POWER_REQ: 'baseline_power_req * (auw / mauw) * (1 + (density_alt / 40000))',
   // Jet Pipe Temperature (°C) - rises with power loading, OAT above ISA, and density altitude
-  JPT: 'jpt_base + (power_req / rated_power) * jpt_range + ab_temp * 1.5 + density_alt / 2000',
+  // Driven by hover collective required (client 12-Oct-26: JPT follows the corrected hover power).
+  JPT: 'jpt_base + (collective_req / collective_max) * jpt_range + ab_temp * 1.5 + density_alt / 2000',
   // Collective pitch required to hover at current AUW / conditions (°)
-  COLLECTIVE_REQ: 'collective_min + (power_req / rated_power) * (collective_max - collective_min)',
+  // Hover collective required — scales with AUW/MAUW, same 0.05 per 3300 ft density-altitude rise as the max collective.
+  COLLECTIVE_REQ: '(hover_collective_sl + collective_step * (density_alt / 3300)) * (auw / mauw)',
   // Collective pitch available before engine power limit is reached (°)
-  COLLECTIVE_AVAIL: 'collective_min + (power_avail / rated_power) * (collective_max - collective_min)',
+  // Max collective (power available): sea-level value + 0.05 per 3300 ft of density altitude (linear).
+  COLLECTIVE_AVAIL: 'max_collective_sl + collective_step * (density_alt / 3300)',
   // Headroom: how many additional degrees of collective remain before limit (°)
   COLLECTIVE_BALANCE: 'collective_avail - collective_req',
 };
@@ -254,9 +276,9 @@ export const FORMULA_META = [
   { key: 'AUW', label: 'All Up Weight (kg)', vars: 'empty_weight, fuel, crew, payload' },
   { key: 'POWER_AVAIL', label: 'Power Available (shp)', vars: 'rated_power, density_alt' },
   { key: 'POWER_REQ', label: 'Power Required (shp)', vars: 'baseline_power_req, auw, mauw, density_alt' },
-  { key: 'JPT', label: 'Jet Pipe Temperature (°C)', vars: 'power_req, rated_power, jpt_base, jpt_range, ab_temp, density_alt' },
-  { key: 'COLLECTIVE_REQ', label: 'Collective Pitch Required (°)', vars: 'power_req, rated_power, collective_min, collective_max' },
-  { key: 'COLLECTIVE_AVAIL', label: 'Collective Pitch Available (°)', vars: 'power_avail, rated_power, collective_min, collective_max' },
+  { key: 'JPT', label: 'Jet Pipe Temperature (°C)', vars: 'collective_req, collective_max, jpt_base, jpt_range, ab_temp, density_alt' },
+  { key: 'COLLECTIVE_REQ', label: 'Hover Collective Pitch Required', vars: 'hover_collective_sl, collective_step, density_alt, auw, mauw' },
+  { key: 'COLLECTIVE_AVAIL', label: 'Max Collective Pitch Available', vars: 'max_collective_sl, collective_step, density_alt' },
   { key: 'COLLECTIVE_BALANCE', label: 'Collective Headroom (°)', vars: 'collective_req, collective_avail' },
 ];
 
@@ -268,7 +290,7 @@ export const FORMULA_META = [
  */
 export const WIZARD_FIELDS = [
   { key: 'elevation', label: 'Elevation', unitKey: 'altitude', unitOptions: ['ft', 'm'], min: 0, max: 20000 },
-  { key: 'qnh', label: 'QNH (Nautical Height)', unitKey: 'pressure', unitOptions: ['hPa', 'inHg'], min: 850, max: 1050 },
+  { key: 'qnh', label: 'QNH (Nautical Height)', unitKey: 'pressure', unitOptions: ['hPa', 'mmHg'], min: 850, max: 1050 },
   { key: 'temperature', label: 'Temperature', unitKey: 'temperature', unitOptions: ['C', 'F'], min: -20, max: 50 },
   { key: 'acWeight', label: 'Aircraft Weight', unitKey: 'weight', unitOptions: ['kg', 'lb'], min: 500, max: 3000 },
   { key: 'crewWeight', label: 'Crew Weight', unitKey: 'weight', unitOptions: ['kg', 'lb'], min: 0, max: 500 },
@@ -402,24 +424,17 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
   const POSSIBLE_PAYLOAD_LOWER = round((aircraft.auwLowerThresholdKg ?? aircraft.mauw) - nonLoadWeight);
   const POSSIBLE_PAYLOAD_UPPER = round(aircraft.mauw - nonLoadWeight);
 
-  const JPT_RAW = safeEval(formulas.JPT, {
-    ...baseCtx,
-    power_req: POWER_REQ,
-    ab_temp: AB_TEMP,
-    density_alt: DENSITY_ALT,
-    jpt_base: aircraft.jptBase ?? 600,
-    jpt_range: aircraft.jptRange ?? 200,
-  });
-  // Placeholder JPT Correction (see block comment above) — treated as a direct additive
-  // offset; 0 unless the user has entered a non-zero JPT Correction.
-  const JPT = JPT_RAW + (Number(aircraft.jptCorrection) || 0);
-
   const collectiveCtx = {
     ...baseCtx,
     power_req: POWER_REQ,
     power_avail: POWER_AVAIL,
-    collective_min: aircraft.collectiveMin ?? 2,
-    collective_max: aircraft.collectiveMax ?? 13,
+    collective_min: aircraft.collectiveMin ?? 0.15,
+    collective_max: aircraft.collectiveMax ?? 1.1,
+    max_collective_sl: aircraft.maxCollectiveSL ?? 0.75,
+    hover_collective_sl: aircraft.hoverCollectiveSL ?? 0.7,
+    collective_step: aircraft.collectiveStep ?? 0.05,
+    density_alt: DENSITY_ALT,
+    auw: AUW,
   };
   // Placeholder chart correction (see interpolateChartValue above) — 0 unless Dθ1-4 entered.
   const DTHETA_CORRECTION = interpolateChartValue(aircraft, PA, 'dTheta');
@@ -431,13 +446,27 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     collective_avail: COLLECTIVE_AVAIL,
   });
 
+  const JPT_RAW = safeEval(formulas.JPT, {
+    ...baseCtx,
+    power_req: POWER_REQ,
+    collective_req: COLLECTIVE_REQ,
+    collective_max: aircraft.collectiveMax ?? 1.1,
+    ab_temp: AB_TEMP,
+    density_alt: DENSITY_ALT,
+    jpt_base: aircraft.jptBase ?? 600,
+    jpt_range: aircraft.jptRange ?? 200,
+  });
+  // Placeholder JPT Correction (see block comment above) — treated as a direct additive
+  // offset; 0 unless the user has entered a non-zero JPT Correction.
+  const JPT = JPT_RAW + (Number(aircraft.jptCorrection) || 0);
+
   // Fit to Fly checks (0.01 precision)
   const reasons = [];
   if (AUW - aircraft.mauw > 0.01) {
     reasons.push(`AUW ${AUW.toFixed(2)}kg exceeds MAUW ${aircraft.mauw}kg`);
   }
-  if (POWER_REQ - POWER_AVAIL > 0.01) {
-    reasons.push(`Power Required ${POWER_REQ.toFixed(2)} > Power Available ${POWER_AVAIL.toFixed(2)} shp`);
+  if (COLLECTIVE_REQ - COLLECTIVE_AVAIL > 0.01) {
+    reasons.push('Power required is more than Power Available');
   }
   if (DENSITY_ALT > 18000) {
     reasons.push(`Density Altitude ${Math.round(DENSITY_ALT)}ft above service ceiling`);
@@ -538,31 +567,33 @@ export const computeVmaxKnots = (aircraft, da_ft, auw_kg) =>
 export const computeROCFpm = (aircraft, da_ft, auw_kg) =>
   Math.max(0, aircraft.rocBase * (_pAvailRoc(da_ft) - auw_kg / aircraft.mauw + aircraft.rocC));
 
-// RPM in Autorotation (client correction, 2026-09-14, sourced from the actual SA315B Lama
-// flight manual — same rotor system as Chetak's Alouette III, and Cheetal is a re-engined
-// Cheetah on the same unchanged rotor): main rotor speed (Nr) is GOVERNED at a constant
-// 353 rpm (100%) in powered flight — it is not a function of AUW or density altitude the
-// way vmax/roc are. In autorotation the pilot manages Nr within a 270-420 rpm band; there is
-// no chart or equation giving a "required" Nr that varies with weight/altitude (unlike
-// vmax/roc, which do have manual-sourced charts) — the correct, honest representation is the
-// real governed target plus its real operating band, not an invented weight/altitude curve.
-export const computeAutorotationRPM = (aircraft) => aircraft.idealAutorotationRPM ?? 353;
-
-// Three flat reference lines (min / ideal / max of the real 270-353-420 rpm band) instead of
-// the 5 AUW-weight curves used by vmax/roc — Nr doesn't vary by AUW, so those don't apply here.
-export const buildAutorotationRPMLines = (aircraft) => {
+// RPM in Autorotation — client correction 12-Oct-26: Auto RPM changes with AUW and altitude.
+// Fitted to the Lama "4 - AUTOROTATION" chart (HAL-graphs/CHETAK GRAPH): the weight lines are
+// near-straight, ~parallel lines of Nr vs density altitude:
+//   Nr(DA=0)  ≈ 320 rpm at 1300 kg, rising ≈ 0.088 rpm per extra kg (≈ 381 rpm at 1990 kg)
+//   slope     ≈ 5 rpm per 1000 ft of density altitude
+// Check against the chart's worked example (1500 kg, Hd 9500 ft, OAT -10°C → 385 rpm): 386.
+// Chart note: below -10°C reduce by 5 rpm per 2°C decrement. Clamped to the 270-420 band.
+const AUTO_RPM_BASE_AT_1300KG = 320;
+const AUTO_RPM_PER_KG = 0.088;
+const AUTO_RPM_PER_1000FT = 5;
+export const computeAutorotationRPM = (aircraft, da_ft = 0, auw_kg = 1300, oat_c = 15) => {
   const [rpmMin, rpmMax] = aircraft.autorotationRPMRange ?? [270, 420];
-  const ideal = computeAutorotationRPM(aircraft);
+  let rpm = AUTO_RPM_BASE_AT_1300KG
+    + AUTO_RPM_PER_KG * (auw_kg - 1300)
+    + AUTO_RPM_PER_1000FT * (da_ft / 1000);
+  if (oat_c < -10) rpm -= 2.5 * (-10 - oat_c);
+  return Math.round(Math.min(rpmMax, Math.max(rpmMin, rpm)));
+};
+
+// Autorotation RPM vs density altitude, one line per reference AUW (same shape as vmax/roc).
+export const buildAutorotationRPMLines = (aircraft) => {
   const daSteps = Array.from({ length: 45 }, (_, i) => i * 500);
-  const flatLine = (label, value) => ({
-    auw: label,
-    points: daSteps.map((da) => ({ da, value })),
-  });
-  return [
-    flatLine(`Max (${rpmMax})`, rpmMax),
-    flatLine(`Ideal (${ideal})`, ideal),
-    flatLine(`Min (${rpmMin})`, rpmMin),
-  ];
+  return getChartRefAuws(aircraft).map((auw) => ({
+    auw,
+    points: daSteps.map((da) => ({ da, value: computeAutorotationRPM(aircraft, da, auw) }))
+      .filter((p) => p.value < (aircraft.autorotationRPMRange?.[1] ?? 420)),
+  }));
 };
 
 // Build the five reference AUW curves for the performance chart.
@@ -582,10 +613,10 @@ export const buildPerformanceCurves = (aircraft, type) => {
 };
 
 // Current operating point to plot on the performance chart.
-export const computeCurrentPerfPoint = (aircraft, da_ft, auw_kg, type) => {
+export const computeCurrentPerfPoint = (aircraft, da_ft, auw_kg, type, oat_c = 15) => {
   let value;
   if (type === 'vmax') value = Math.round(computeVmaxKnots(aircraft, da_ft, auw_kg));
-  else if (type === 'autorotation-rpm') value = computeAutorotationRPM(aircraft);
+  else if (type === 'autorotation-rpm') value = computeAutorotationRPM(aircraft, da_ft, auw_kg, oat_c);
   else value = Math.round(computeROCFpm(aircraft, da_ft, auw_kg));
   return { da: da_ft, value };
 };
@@ -625,15 +656,16 @@ export const buildAltitudeTempTable = (aircraft) => {
 export const buildJPTvsDACurve = (aircraft, abTemp, auwKg, formulas = DEFAULT_FORMULAS) => {
   const points = [];
   for (let da = 0; da <= 20000; da += 1000) {
-    const power_req = safeEval(formulas.POWER_REQ, {
-      baseline_power_req: aircraft.baselinePowerReqSHP,
+    const collective_req = safeEval(formulas.COLLECTIVE_REQ, {
+      hover_collective_sl: aircraft.hoverCollectiveSL ?? 0.7,
+      collective_step: aircraft.collectiveStep ?? 0.05,
       auw: auwKg,
       mauw: aircraft.mauw,
       density_alt: da,
     });
     const jpt = safeEval(formulas.JPT, {
-      power_req,
-      rated_power: aircraft.ratedPowerSHP,
+      collective_req,
+      collective_max: aircraft.collectiveMax ?? 1.1,
       jpt_base: aircraft.jptBase ?? 600,
       jpt_range: aircraft.jptRange ?? 200,
       ab_temp: abTemp,

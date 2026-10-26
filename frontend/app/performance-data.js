@@ -24,7 +24,7 @@ const HELI_IMG = {
 
 // Display labels for unit codes — mirrors the pill labels used across calculator.js / airframe.js
 const UNIT_LABELS = {
-  ft: 'ft', m: 'm', C: '°C', F: '°F', kg: 'Kg', lb: 'Lb', hPa: 'hPa', inHg: 'inHg', L: 'Lt',
+  ft: 'ft', m: 'm', C: '°C', F: '°F', kg: 'Kg', lb: 'Lb', hPa: 'mb', mmHg: 'mmHg', L: 'Lt',
 };
 const fmtUnit = (u) => UNIT_LABELS[u] ?? u;
 
@@ -215,14 +215,14 @@ export default function PerformanceData() {
     [aircraft, metric],
   );
   const currentPoint = useMemo(
-    () => computeCurrentPerfPoint(aircraft, outputs.DENSITY_ALT, outputs.AUW, metric),
-    [aircraft, outputs.DENSITY_ALT, outputs.AUW, metric],
+    () => computeCurrentPerfPoint(aircraft, outputs.DENSITY_ALT, outputs.AUW, metric, inputs.temperature ?? 15),
+    [aircraft, outputs.DENSITY_ALT, outputs.AUW, metric, inputs.temperature],
   );
 
   const vmaxKt = Math.round(computeVmaxKnots(aircraft, outputs.DENSITY_ALT, outputs.AUW));
   const rocFpm = Math.round(computeROCFpm(aircraft, outputs.DENSITY_ALT, outputs.AUW));
   const rocDisplay = rocUnit === 'ft' ? rocFpm : Math.round(rocFpm * CONVERSIONS.ft_to_m);
-  const autorotationRpm = computeAutorotationRPM(aircraft);
+  const autorotationRpm = computeAutorotationRPM(aircraft, outputs.DENSITY_ALT, outputs.AUW, inputs.temperature ?? 15);
 
   // useWindowDimensions() can briefly report width=0 on the initial RN-web hydration pass,
   // which would otherwise compute a negative <Svg> width — clamp to a sane minimum.
@@ -270,21 +270,21 @@ export default function PerformanceData() {
             onPress={() => setMetric('vmax')}
             testID="tab-vmax"
           >
-            <Text style={[styles.tabText, metric === 'vmax' && styles.tabTextActive]}>Max Level Flight Speed</Text>
+            <Text style={[styles.tabText, metric === 'vmax' && styles.tabTextActive]} numberOfLines={2}>Max Level Flight Speed</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tabBtn, metric === 'roc' && styles.tabBtnActive]}
             onPress={() => setMetric('roc')}
             testID="tab-roc"
           >
-            <Text style={[styles.tabText, metric === 'roc' && styles.tabTextActive]}>Rate of Climb</Text>
+            <Text style={[styles.tabText, metric === 'roc' && styles.tabTextActive]} numberOfLines={2}>Rate of Climb</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tabBtn, metric === 'autorotation-rpm' && styles.tabBtnActive]}
             onPress={() => setMetric('autorotation-rpm')}
             testID="tab-autorotation-rpm"
           >
-            <Text style={[styles.tabText, metric === 'autorotation-rpm' && styles.tabTextActive]}>RPM in Autorotation</Text>
+            <Text style={[styles.tabText, metric === 'autorotation-rpm' && styles.tabTextActive]} numberOfLines={2}>RPM in Autorotation</Text>
           </TouchableOpacity>
         </View>
 
@@ -292,9 +292,8 @@ export default function PerformanceData() {
           <View style={styles.infoBanner} testID="autorotation-rpm-notice">
             <AlertTriangle size={14} color={COLORS.primaryDark} style={{ marginTop: 1 }} />
             <Text style={styles.infoText}>
-              Main rotor speed (Nr) is governed at a constant {aircraft.idealAutorotationRPM} rpm in
-              powered flight. In autorotation it is managed within a {aircraft.autorotationRPMRange?.[0]}-{aircraft.autorotationRPMRange?.[1]} rpm
-              band — a pilot-managed target, not a value that shifts with weight or altitude.
+              Autorotation RPM increases with All Up Weight and Density Altitude (Lama flight-manual
+              chart). Operating band: {aircraft.autorotationRPMRange?.[0]}-{aircraft.autorotationRPMRange?.[1]} rpm.
             </Text>
           </View>
         )}
@@ -310,7 +309,7 @@ export default function PerformanceData() {
               testID="cell-elevation"
             />
             <EditableCell
-              label="QNH" value={inputs.qnh} unit={qnhUnit} unitOptions={['hPa', 'inHg']}
+              label="QNH" value={inputs.qnh} unit={qnhUnit} unitOptions={['hPa', 'mmHg']}
               onCommit={(v) => setInputs({ qnh: v })} onUnitChange={setQnhUnit}
               testID="cell-qnh"
             />
@@ -362,15 +361,15 @@ export default function PerformanceData() {
           {metric === 'vmax' ? (
             <View style={styles.row}>
               <EditableCell
-                label="Cruise Power" value={inputs.cruisePower ?? aircraft.baselinePowerReqSHP} unit="shp" unitOptions={null}
+                label="Cruise Collective Pitch" value={inputs.cruisePower ?? outputs.COLLECTIVE_REQ} unit={null} unitOptions={null}
                 onCommit={(v) => setInputs({ cruisePower: v })} onUnitChange={() => {}}
                 testID="cell-cruise-power"
               />
-              <ReadOnlyCell label="Max Power1" value={aircraft.ratedPowerSHP} suffix="shp" testID="cell-max-power" />
+              <ReadOnlyCell label="Max Collective Pitch" value={outputs.COLLECTIVE_AVAIL} testID="cell-max-power" />
             </View>
           ) : (
             <View style={styles.row}>
-              <ReadOnlyCell label="Max Power1" value={aircraft.ratedPowerSHP} suffix="shp" testID="cell-max-power" />
+              <ReadOnlyCell label="Max Collective Pitch" value={outputs.COLLECTIVE_AVAIL} testID="cell-max-power" />
               <View style={styles.cell} />
             </View>
           )}
@@ -449,11 +448,11 @@ const styles = StyleSheet.create({
 
   tabRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg },
   tabBtn: {
-    flex: 1, paddingVertical: 10, borderRadius: RADIUS.pill, alignItems: 'center',
+    flex: 1, paddingVertical: 10, paddingHorizontal: 6, borderRadius: RADIUS.pill, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.card, borderWidth: 1.5, borderColor: COLORS.border,
   },
   tabBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  tabText: { fontSize: 12.5, fontWeight: '700', color: COLORS.textMuted },
+  tabText: { fontSize: 12, fontWeight: '700', color: COLORS.textMuted, textAlign: 'center' },
   tabTextActive: { color: '#fff' },
 
   infoBanner: {
@@ -474,12 +473,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border,
     borderRadius: RADIUS.md, height: 38, paddingHorizontal: SPACING.md, ...SHADOW,
   },
-  cellInput: { flex: 1, fontSize: 14, fontWeight: '600', color: '#525252', padding: 0 },
+  cellInput: { flex: 1, minWidth: 0, fontSize: 14, fontWeight: '600', color: '#525252', padding: 0 },
   cellInputStatic: { flex: 1, fontSize: 14, fontWeight: '600', color: '#525252' },
   cellSuffix: { fontSize: 11, fontWeight: '500', color: COLORS.textMuted },
 
   unitPill: { flexDirection: 'row', backgroundColor: COLORS.primaryLight, borderRadius: 4, padding: 2 },
-  unitSeg: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 3 },
+  unitSeg: { paddingHorizontal: 6, paddingVertical: 4, borderRadius: 3 },
   unitSegActive: { backgroundColor: COLORS.primaryDark },
   unitSegText: { fontSize: 10, fontWeight: '600', color: COLORS.primaryDark },
   unitSegTextActive: { color: '#fff' },

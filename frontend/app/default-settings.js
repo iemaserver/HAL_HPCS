@@ -76,7 +76,7 @@ const VOICE_FIELD_PAGE = {
 
 // Display labels — PPTX slide 7 explicitly spells these as "mb" / "mmHg", not the generic
 // hPa/inHg codes the rest of the app uses internally (numerically identical: 1 hPa = 1 mb).
-const UNIT_LABELS = { ft: 'ft', m: 'm', C: '°c', F: '°F', kg: 'Kg', lb: 'Lb', hPa: 'mb', inHg: 'mmHg' };
+const UNIT_LABELS = { ft: 'ft', m: 'm', C: '°C', F: '°F', kg: 'Kg', lb: 'Lb', hPa: 'mb', mmHg: 'mmHg' };
 const fmtUnit = (u) => UNIT_LABELS[u] ?? u;
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -406,8 +406,8 @@ export default function DefaultSettings() {
             <View style={styles.row}>
               <EditableCell
                 required label="QNH" value={aircraft.defaultQNH} unit={qnhUnit}
-                unitOptions={['hPa', 'inHg']} onCommit={(v) => patchAircraft({ defaultQNH: v })}
-                onUnitChange={setQnhUnit} maxLength={qnhUnit === 'inHg' ? 3 : 4}
+                unitOptions={['hPa', 'mmHg']} onCommit={(v) => patchAircraft({ defaultQNH: v })}
+                onUnitChange={setQnhUnit} maxLength={qnhUnit === 'mmHg' ? 6 : 7}
                 testID="ds-qnh"
               />
               <EditableCell

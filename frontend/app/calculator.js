@@ -25,7 +25,7 @@ const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 // PPTX slide 7/9 spells pressure units "mb" / "mmHg" — numerically identical to the app's
 // internal hPa/inHg unit codes (1 hPa = 1 mb), only the label text differs.
-const UNIT_LABELS = { ft: 'ft', m: 'm', C: '°C', F: '°F', kg: 'Kg', lb: 'Lb', hPa: 'mb', inHg: 'mmHg', L: 'Lt' };
+const UNIT_LABELS = { ft: 'ft', m: 'm', C: '°C', F: '°F', kg: 'Kg', lb: 'Lb', hPa: 'mb', mmHg: 'mmHg', L: 'Lt' };
 const fmtUnit = (u) => UNIT_LABELS[u] ?? u;
 
 // ── Segmented unit pill ──
@@ -453,8 +453,8 @@ export default function Calculator() {
             />
             <EditableCell
               required label="QNH" value={inputs.qnh} unit={qnhUnit}
-              unitOptions={['hPa', 'inHg']} onCommit={(v) => setInputs({ qnh: v })}
-              onUnitChange={setQnhUnit} maxLength={qnhUnit === 'inHg' ? 3 : 4}
+              unitOptions={['hPa', 'mmHg']} onCommit={(v) => setInputs({ qnh: v })}
+              onUnitChange={setQnhUnit} maxLength={qnhUnit === 'mmHg' ? 6 : 7}
               testID="calc-qnh" highlight={activeFieldKey === 'qnh'}
             />
           </View>
