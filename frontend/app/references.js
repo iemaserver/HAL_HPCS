@@ -25,7 +25,7 @@ export default function References() {
         >
           <Menu size={22} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>HAL HPS</Text>
+        <Text style={styles.headerTitle}>Chet Cal C</Text>
         <TouchableOpacity
           onPress={() => {}}
           style={styles.micBtn}

@@ -1,19 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, TextInput, useWindowDimensions,
+  View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, TextInput,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
-import { Menu, Mic, AlertTriangle } from 'lucide-react-native';
+import { Menu, Mic } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
 import AppMenu from '../src/components/AppMenu';
-import PerformanceChart from '../src/components/PerformanceChart';
-import {
-  fromBaseUnit, toBaseUnit, CONVERSIONS,
-  computeVmaxKnots, computeROCFpm, computeAutorotationRPM, buildAutorotationRPMLines,
-  buildPerformanceCurves, computeCurrentPerfPoint,
-} from '../src/constants/logic';
+import GraphViewer from '../src/components/GraphViewer';
+import { GRAPH_TITLES, getGraphSource, graphMetricsFor } from '../src/constants/graphs';
+import { fromBaseUnit, toBaseUnit } from '../src/constants/logic';
 import { useVoiceFieldControl } from '../src/hooks/useVoiceFieldControl';
 
 const HELI_IMG = {
@@ -132,22 +129,22 @@ export default function PerformanceData() {
     aircraftDefaults, selectedAircraftId, inputs, setInputs, outputs, micEnabled,
   } = useAppState();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [metric, setMetric] = useState(
-    params.metric === 'roc' ? 'roc' : params.metric === 'autorotation-rpm' ? 'autorotation-rpm' : 'vmax'
-  );
+  const [metric, setMetric] = useState(GRAPH_TITLES[params.metric] ? params.metric : 'vmax');
+  // The menu / other screens can deep-link to a specific graph (e.g. JPT from Hover Power).
+  useEffect(() => {
+    if (GRAPH_TITLES[params.metric]) setMetric(params.metric);
+  }, [params.metric]);
   // Screen-local unit toggles (client correction 2026-09-14: changing one field's unit must
   // not change any other field's unit, including on other screens that used to share these
   // via the global `units` prefs).
-  const [rocUnit, setRocUnit] = useState('ft');
   const [elevationUnit, setElevationUnit] = useState('ft');
   const [qnhUnit, setQnhUnit] = useState('hPa');
   const [temperatureUnit, setTemperatureUnit] = useState('C');
   const [paUnit, setPaUnit] = useState('ft');
   const [daUnit, setDaUnit] = useState('ft');
-  const [auwUnit, setAuwUnit] = useState('kg');
+  const [auwUnit, setAuwUnit] = useState('lb'); // client 20-Nov-26: AUW defaults to pounds
   const [loadUnit, setLoadUnit] = useState('kg');
   const [passengerWeightUnit, setPassengerWeightUnit] = useState('kg');
   const [fuelMassUnit, setFuelMassUnit] = useState('kg');
@@ -174,16 +171,16 @@ export default function PerformanceData() {
       : []),
   ];
 
-  const voiceOptions = [
-    { key: 'vmax', label: 'Max Level Flight Speed', aliases: ['level flight speed', 'max speed', 'vmax'], onSelect: () => setMetric('vmax') },
-    { key: 'roc', label: 'Rate of Climb', aliases: ['climb rate', 'roc'], onSelect: () => setMetric('roc') },
-    {
-      key: 'autorotation-rpm',
-      label: 'RPM in Autorotation',
-      aliases: ['autorotation', 'rpm', 'autorotation rpm'],
-      onSelect: () => setMetric('autorotation-rpm'),
-    },
-  ];
+  const VOICE_ALIASES = {
+    vmax: ['level flight speed', 'max speed', 'vmax', 'speed'],
+    roc: ['climb rate', 'roc', 'climb'],
+    'autorotation-rpm': ['autorotation', 'rpm', 'autorotation rpm'],
+    jpt: ['jpt', 'j p t', 'jpt graph', 'tail pipe temperature'],
+    maxpower: ['max power', 'maximum power', 'power available'],
+  };
+  const voiceOptions = Object.keys(GRAPH_TITLES).map((m) => ({
+    key: m, label: GRAPH_TITLES[m], aliases: VOICE_ALIASES[m], onSelect: () => setMetric(m),
+  }));
 
   const onUnitChange = (key, unit) => {
     const setters = {
@@ -232,24 +229,6 @@ export default function PerformanceData() {
     fields: withUnits(voiceFields), options: voiceOptions, onCommitValue, onUnitChange, micEnabled,
   });
 
-  const curves = useMemo(
-    () => (metric === 'autorotation-rpm' ? buildAutorotationRPMLines(aircraft) : buildPerformanceCurves(aircraft, metric)),
-    [aircraft, metric],
-  );
-  const currentPoint = useMemo(
-    () => computeCurrentPerfPoint(aircraft, outputs.DENSITY_ALT, outputs.AUW, metric, inputs.temperature ?? 15),
-    [aircraft, outputs.DENSITY_ALT, outputs.AUW, metric, inputs.temperature],
-  );
-
-  const vmaxKt = Math.round(computeVmaxKnots(aircraft, outputs.DENSITY_ALT, outputs.AUW));
-  const rocFpm = Math.round(computeROCFpm(aircraft, outputs.DENSITY_ALT, outputs.AUW));
-  const rocDisplay = rocUnit === 'ft' ? rocFpm : Math.round(rocFpm * CONVERSIONS.ft_to_m);
-  const autorotationRpm = computeAutorotationRPM(aircraft, outputs.DENSITY_ALT, outputs.AUW, inputs.temperature ?? 15);
-
-  // useWindowDimensions() can briefly report width=0 on the initial RN-web hydration pass,
-  // which would otherwise compute a negative <Svg> width — clamp to a sane minimum.
-  const chartWidth = Math.max(200, Math.min(width - (SPACING.lg + SPACING.md) * 2, 380));
-
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']} testID="performance-data-screen">
       {/* Header */}
@@ -262,7 +241,7 @@ export default function PerformanceData() {
         >
           <Menu size={20} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>HAL HPS</Text>
+        <Text style={styles.headerTitle}>Chet Cal C</Text>
         <TouchableOpacity
           onPress={toggleVoice}
           style={[styles.micBtn, listening && styles.micBtnActive]}
@@ -285,40 +264,21 @@ export default function PerformanceData() {
           <Text style={styles.screenTitle}>Performance Data</Text>
         </View>
 
-        {/* Metric toggle */}
+        {/* Reference graph selector — only the graphs that exist for this aircraft */}
         <View style={styles.tabRow}>
-          <TouchableOpacity
-            style={[styles.tabBtn, metric === 'vmax' && styles.tabBtnActive]}
-            onPress={() => setMetric('vmax')}
-            testID="tab-vmax"
-          >
-            <Text style={[styles.tabText, metric === 'vmax' && styles.tabTextActive]} numberOfLines={2}>Max Level Flight Speed</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabBtn, metric === 'roc' && styles.tabBtnActive]}
-            onPress={() => setMetric('roc')}
-            testID="tab-roc"
-          >
-            <Text style={[styles.tabText, metric === 'roc' && styles.tabTextActive]} numberOfLines={2}>Rate of Climb</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tabBtn, metric === 'autorotation-rpm' && styles.tabBtnActive]}
-            onPress={() => setMetric('autorotation-rpm')}
-            testID="tab-autorotation-rpm"
-          >
-            <Text style={[styles.tabText, metric === 'autorotation-rpm' && styles.tabTextActive]} numberOfLines={2}>RPM in Autorotation</Text>
-          </TouchableOpacity>
+          {graphMetricsFor(selectedAircraftId).map((m) => (
+            <TouchableOpacity
+              key={m}
+              style={[styles.tabBtn, metric === m && styles.tabBtnActive]}
+              onPress={() => setMetric(m)}
+              testID={`tab-${m}`}
+            >
+              <Text style={[styles.tabText, metric === m && styles.tabTextActive]} numberOfLines={2}>
+                {GRAPH_TITLES[m]}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
-
-        {metric === 'autorotation-rpm' && (
-          <View style={styles.infoBanner} testID="autorotation-rpm-notice">
-            <AlertTriangle size={14} color={COLORS.primaryDark} style={{ marginTop: 1 }} />
-            <Text style={styles.infoText}>
-              Autorotation RPM increases with All Up Weight and Density Altitude (Lama flight-manual
-              chart). Operating band: {aircraft.autorotationRPMRange?.[0]}-{aircraft.autorotationRPMRange?.[1]} rpm.
-            </Text>
-          </View>
-        )}
 
         <View style={styles.divider} />
 
@@ -353,7 +313,7 @@ export default function PerformanceData() {
               onUnitChange={setDaUnit} testID="cell-da"
             />
             <ReadOnlyCell
-              label="All up Weight" value={outputs.AUW} unit={auwUnit} unitOptions={['kg', 'lb']}
+              label="All up Weight" value={outputs.AUW} unit={auwUnit} unitOptions={['lb', 'kg']}
               onUnitChange={setAuwUnit} testID="cell-auw"
             />
           </View>
@@ -399,45 +359,15 @@ export default function PerformanceData() {
 
         <View style={styles.divider} />
 
-        {/* Output row */}
-        {metric === 'vmax' ? (
-          <View style={styles.outputRow} testID="output-vmax">
-            <Text style={styles.outputLabel}>Max Speed in Level Flight</Text>
-            <View style={styles.outputValueBox}>
-              <Text style={styles.outputValueText}>{vmaxKt}</Text>
-              <View style={styles.unitPill}>
-                <View style={[styles.unitSeg, styles.unitSegActive]}>
-                  <Text style={[styles.unitSegText, styles.unitSegTextActive]}>Kt</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        ) : metric === 'autorotation-rpm' ? (
-          <View style={styles.outputRow} testID="output-autorotation-rpm">
-            <Text style={styles.outputLabel}>RPM in Autorotation</Text>
-            <View style={styles.outputValueBox}>
-              <Text style={styles.outputValueText}>{autorotationRpm}</Text>
-              <View style={styles.unitPill}>
-                <View style={[styles.unitSeg, styles.unitSegActive]}>
-                  <Text style={[styles.unitSegText, styles.unitSegTextActive]}>rpm</Text>
-                </View>
-              </View>
-            </View>
-          </View>
+        {/* Reference graph (client 20-Nov-26: no dynamic graphs — flight-manual sheets only) */}
+        <Text style={styles.graphTitle} testID="graph-title">
+          {aircraft.name} — {GRAPH_TITLES[metric]} (reference)
+        </Text>
+        {getGraphSource(selectedAircraftId, metric) ? (
+          <GraphViewer source={getGraphSource(selectedAircraftId, metric)} height={560} />
         ) : (
-          <View style={styles.outputRow} testID="output-roc">
-            <Text style={styles.outputLabel}>Rate of Climb</Text>
-            <View style={styles.outputValueBox}>
-              <Text style={styles.outputValueText}>{rocDisplay}</Text>
-              <UnitPill options={['ft', 'm']} active={rocUnit} onSelect={setRocUnit} />
-            </View>
-          </View>
+          <Text style={styles.noGraph}>No {GRAPH_TITLES[metric]} sheet for {aircraft.name}.</Text>
         )}
-
-        {/* Chart */}
-        <View style={styles.chartCard}>
-          <PerformanceChart type={metric} curves={curves} current={currentPoint} width={chartWidth} height={260} />
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -468,9 +398,11 @@ const styles = StyleSheet.create({
   badgeLabel: { fontSize: 10, fontWeight: '600', color: COLORS.text, marginTop: 2 },
   screenTitle: { fontSize: 18, fontWeight: '700', color: COLORS.text },
 
-  tabRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg },
+  tabRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginTop: SPACING.lg },
+  graphTitle: { fontSize: 15, fontWeight: '800', color: COLORS.text, marginBottom: SPACING.md },
+  noGraph: { fontSize: 13, color: COLORS.textMuted, fontWeight: '600' },
   tabBtn: {
-    flex: 1, paddingVertical: 10, paddingHorizontal: 6, borderRadius: RADIUS.pill, alignItems: 'center', justifyContent: 'center',
+    flexGrow: 1, minWidth: '30%', paddingVertical: 10, paddingHorizontal: 6, borderRadius: RADIUS.pill, alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.card, borderWidth: 1.5, borderColor: COLORS.border,
   },
   tabBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },

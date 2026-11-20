@@ -1,222 +1,6 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
-import {
-  buildPerformanceCurves,
-  computeCurrentPerfPoint,
-  CHART_DA_MAX,
-  CHART_VMAX_MIN,
-  CHART_VMAX_MAX,
-  CHART_ROC_MAX,
-  CHART_OAT_MIN,
-  CHART_OAT_MAX,
-  CHART_PA_MAX,
-  CHART_PA_DA_CONTOURS,
-} from '../constants/logic';
-
-// ─── SVG chart renderers ────────────────────────────────────────────────────
-
-const CURVE_COLORS = ['#CBD5E1', '#94A3B8', '#64748B', '#475569', '#1E293B'];
-const CONTOUR_COLORS = ['#CBD5E1', '#94A3B8', '#64748B', '#475569', '#334155', '#1E293B'];
-const PRIMARY = '#1EA7E8';
-
-const f = (n) => Math.round(n * 10) / 10;
-
-function _buildPerfSvg(type, curves, current, w = 360, h = 235) {
-  const padL = 44, padR = 14, padT = 22, padB = 44;
-  const plotW = w - padL - padR;
-  const plotH = h - padT - padB;
-
-  const xMin = type === 'vmax' ? CHART_VMAX_MIN : 0;
-  const xMax = type === 'vmax' ? CHART_VMAX_MAX : CHART_ROC_MAX;
-  const xRange = xMax - xMin;
-
-  const sx = (v) => padL + ((v - xMin) / xRange) * plotW;
-  const sy = (da) => padT + (1 - da / CHART_DA_MAX) * plotH;
-
-  const xTickStep = type === 'vmax' ? 10 : 250;
-  const xTicks = [];
-  for (let v = xMin; v <= xMax; v += xTickStep) xTicks.push(v);
-
-  const DA_TICKS = [0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000, 20000, 22000];
-  const title = type === 'vmax' ? 'MAX SPEED IN LEVEL FLIGHT' : 'RATE OF CLIMB';
-  const xLabel = type === 'vmax' ? 'Max Speed (knots)' : 'Rate of Climb (ft/min)';
-
-  let s = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">`;
-  s += `<rect width="${w}" height="${h}" fill="#F8FAFC" rx="0"/>`;
-
-  // Title bar
-  s += `<rect width="${w}" height="18" fill="#0B1E35" rx="0"/>`;
-  s += `<text x="${f(w / 2)}" y="12" font-size="8" fill="#94A3B8" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" letter-spacing="1.5">${title}</text>`;
-
-  // Plot background
-  s += `<rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="#fff"/>`;
-
-  // Horizontal DA grid lines
-  for (const da of DA_TICKS) {
-    const major = da % 4000 === 0;
-    const y = f(sy(da));
-    s += `<line x1="${padL}" y1="${y}" x2="${f(padL + plotW)}" y2="${y}" stroke="${major ? '#D1D5DB' : '#F1F5F9'}" stroke-dasharray="${major ? '4,3' : '2,5'}" stroke-width="${major ? 0.8 : 0.6}"/>`;
-    if (major) {
-      s += `<text x="${padL - 4}" y="${f(sy(da) + 3.5)}" font-size="8" fill="#64748B" text-anchor="end" font-family="Helvetica,Arial,sans-serif">${da === 0 ? '0' : `${da / 1000}k`}</text>`;
-    }
-  }
-
-  // Vertical X grid lines + tick labels
-  for (const v of xTicks) {
-    const x = f(sx(v));
-    s += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${f(padT + plotH)}" stroke="#F1F5F9" stroke-dasharray="2,5" stroke-width="0.6"/>`;
-    s += `<text x="${x}" y="${f(padT + plotH + 11)}" font-size="8" fill="#64748B" text-anchor="middle" font-family="Helvetica,Arial,sans-serif">${v}</text>`;
-  }
-
-  // Axis borders
-  s += `<rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="none" stroke="#CBD5E1" stroke-width="1"/>`;
-
-  // Reference AUW curves
-  curves.forEach((curve, idx) => {
-    const pts = curve.points.filter(
-      (p) => p.value >= xMin && p.value <= xMax + xTickStep && p.da <= CHART_DA_MAX,
-    );
-    if (pts.length < 2) return;
-    const d = pts.map((p, i) => {
-      const cx = f(Math.min(Math.max(sx(p.value), padL), padL + plotW));
-      const cy = f(Math.min(Math.max(sy(p.da), padT), padT + plotH));
-      return `${i === 0 ? 'M' : 'L'} ${cx} ${cy}`;
-    }).join(' ');
-    s += `<path d="${d}" stroke="${CURVE_COLORS[idx % CURVE_COLORS.length]}" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
-  });
-
-  // Current operating point crosshairs + marker
-  if (current && current.value > xMin && current.da <= CHART_DA_MAX) {
-    const cx = f(sx(current.value));
-    const cy = f(sy(current.da));
-    s += `<line x1="${padL}" y1="${cy}" x2="${cx}" y2="${cy}" stroke="${PRIMARY}" stroke-width="1" stroke-dasharray="4,3" opacity="0.8"/>`;
-    s += `<line x1="${cx}" y1="${f(padT + plotH)}" x2="${cx}" y2="${cy}" stroke="${PRIMARY}" stroke-width="1" stroke-dasharray="4,3" opacity="0.8"/>`;
-    s += `<circle cx="${cx}" cy="${cy}" r="6.5" fill="#fff" stroke="${PRIMARY}" stroke-width="2"/>`;
-    s += `<circle cx="${cx}" cy="${cy}" r="3" fill="${PRIMARY}"/>`;
-    // Value label with background
-    const lx = f(sx(current.value) + 9);
-    const ly = f(sy(current.da) - 6);
-    const label = `${current.value} ${type === 'vmax' ? 'kts' : 'fpm'}`;
-    s += `<rect x="${lx - 2}" y="${ly - 9}" width="${label.length * 6.2 + 4}" height="13" fill="rgba(255,255,255,0.88)" rx="2"/>`;
-    s += `<text x="${lx}" y="${ly}" font-size="9.5" fill="${PRIMARY}" font-weight="bold" font-family="Helvetica,Arial,sans-serif">${label}</text>`;
-  }
-
-  // Rotated Y-axis label
-  const lcy = f(padT + plotH / 2);
-  s += `<text x="9" y="${lcy}" font-size="7.5" fill="#64748B" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" transform="rotate(-90,9,${lcy})">Density Alt (ft)</text>`;
-
-  // X-axis label
-  s += `<text x="${f(padL + plotW / 2)}" y="${h - 26}" font-size="7.5" fill="#64748B" text-anchor="middle" font-family="Helvetica,Arial,sans-serif">${xLabel}</text>`;
-
-  // Legend
-  let lx = padL;
-  const legendY = h - 12;
-  curves.forEach((curve, idx) => {
-    const color = CURVE_COLORS[idx % CURVE_COLORS.length];
-    s += `<line x1="${lx}" y1="${legendY}" x2="${lx + 12}" y2="${legendY}" stroke="${color}" stroke-width="2.2"/>`;
-    s += `<text x="${lx + 15}" y="${legendY + 4}" font-size="7" fill="${color}" font-weight="600" font-family="Helvetica,Arial,sans-serif">${curve.auw}kg</text>`;
-    lx += 48;
-  });
-  s += `<circle cx="${lx + 5}" cy="${legendY}" r="3.5" fill="${PRIMARY}"/>`;
-  s += `<text x="${lx + 11}" y="${legendY + 4}" font-size="7" fill="${PRIMARY}" font-weight="600" font-family="Helvetica,Arial,sans-serif">Current</text>`;
-
-  s += `</svg>`;
-  return s;
-}
-
-function _buildIsaSvg(current, w = 720, h = 252) {
-  const padL = 46, padR = 32, padT = 22, padB = 44;
-  const plotW = w - padL - padR;
-  const plotH = h - padT - padB;
-
-  const oatRange = CHART_OAT_MAX - CHART_OAT_MIN;
-  const sx = (oat) => padL + ((oat - CHART_OAT_MIN) / oatRange) * plotW;
-  const sy = (pa) => padT + (1 - pa / CHART_PA_MAX) * plotH;
-  const K = 1 + 118.8 * 0.00198;
-
-  const OAT_TICKS = [-30, -20, -10, 0, 10, 20, 30, 40, 50];
-  const PA_TICKS = [0, 4000, 8000, 12000, 16000, 20000];
-
-  let s = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">`;
-  s += `<rect width="${w}" height="${h}" fill="#F8FAFC" rx="0"/>`;
-
-  // Title bar
-  s += `<rect width="${w}" height="18" fill="#0B1E35" rx="0"/>`;
-  s += `<text x="${f(w / 2)}" y="12" font-size="8" fill="#94A3B8" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-weight="bold" letter-spacing="1.5">PRESSURE ALTITUDE vs DENSITY ALTITUDE</text>`;
-
-  // Plot background
-  s += `<rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="#fff"/>`;
-
-  // PA grid lines
-  for (const pa of PA_TICKS) {
-    const y = f(sy(pa));
-    s += `<line x1="${padL}" y1="${y}" x2="${f(padL + plotW)}" y2="${y}" stroke="#D1D5DB" stroke-dasharray="4,3" stroke-width="0.8"/>`;
-    s += `<text x="${padL - 4}" y="${f(sy(pa) + 3.5)}" font-size="8" fill="#64748B" text-anchor="end" font-family="Helvetica,Arial,sans-serif">${pa === 0 ? '0' : `${pa / 1000}k`}</text>`;
-  }
-
-  // OAT grid lines + tick labels
-  for (const oat of OAT_TICKS) {
-    const x = f(sx(oat));
-    s += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${f(padT + plotH)}" stroke="#F1F5F9" stroke-dasharray="2,5" stroke-width="0.6"/>`;
-    s += `<text x="${x}" y="${f(padT + plotH + 11)}" font-size="8" fill="#64748B" text-anchor="middle" font-family="Helvetica,Arial,sans-serif">${oat > 0 ? `+${oat}` : `${oat}`}</text>`;
-  }
-
-  // Axis borders
-  s += `<rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="none" stroke="#CBD5E1" stroke-width="1"/>`;
-
-  // DA contour lines
-  CHART_PA_DA_CONTOURS.forEach((da, idx) => {
-    const color = CONTOUR_COLORS[Math.min(
-      Math.floor(idx * CONTOUR_COLORS.length / CHART_PA_DA_CONTOURS.length),
-      CONTOUR_COLORS.length - 1,
-    )];
-    const pts = [];
-    for (let oat = CHART_OAT_MIN; oat <= CHART_OAT_MAX; oat++) {
-      const pa = (da - 118.8 * (oat - 15)) / K;
-      if (pa >= 0 && pa <= CHART_PA_MAX) pts.push({ oat, pa });
-    }
-    if (pts.length < 2) return;
-    const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${f(sx(p.oat))} ${f(sy(p.pa))}`).join(' ');
-    const last = pts[pts.length - 1];
-    s += `<path d="${d}" stroke="${color}" stroke-width="1.5" fill="none"/>`;
-    s += `<text x="${f(sx(last.oat) + 3)}" y="${f(sy(last.pa) + 3.5)}" font-size="7.5" fill="${color}" font-weight="bold" font-family="Helvetica,Arial,sans-serif">${da === 0 ? '0' : `${da / 1000}k`}</text>`;
-  });
-
-  // Current operating point
-  if (
-    current &&
-    current.pa >= 0 && current.pa <= CHART_PA_MAX &&
-    current.oat >= CHART_OAT_MIN && current.oat <= CHART_OAT_MAX
-  ) {
-    const cx = f(sx(current.oat));
-    const cy = f(sy(current.pa));
-    s += `<line x1="${padL}" y1="${cy}" x2="${cx}" y2="${cy}" stroke="${PRIMARY}" stroke-width="1" stroke-dasharray="4,3" opacity="0.8"/>`;
-    s += `<line x1="${cx}" y1="${f(padT + plotH)}" x2="${cx}" y2="${cy}" stroke="${PRIMARY}" stroke-width="1" stroke-dasharray="4,3" opacity="0.8"/>`;
-    s += `<circle cx="${cx}" cy="${cy}" r="6.5" fill="#fff" stroke="${PRIMARY}" stroke-width="2"/>`;
-    s += `<circle cx="${cx}" cy="${cy}" r="3" fill="${PRIMARY}"/>`;
-    const lx = f(sx(current.oat) + 9);
-    const ly = f(sy(current.pa) - 6);
-    const label = `DA ${Math.round(current.da / 100) * 100} ft`;
-    s += `<rect x="${lx - 2}" y="${ly - 9}" width="${label.length * 6 + 4}" height="13" fill="rgba(255,255,255,0.88)" rx="2"/>`;
-    s += `<text x="${lx}" y="${ly}" font-size="9.5" fill="${PRIMARY}" font-weight="bold" font-family="Helvetica,Arial,sans-serif">${label}</text>`;
-  }
-
-  // Rotated Y-axis label
-  const lcy = f(padT + plotH / 2);
-  s += `<text x="9" y="${lcy}" font-size="7.5" fill="#64748B" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" transform="rotate(-90,9,${lcy})">Press. Alt (ft)</text>`;
-
-  // X-axis label
-  s += `<text x="${f(padL + plotW / 2)}" y="${h - 26}" font-size="7.5" fill="#64748B" text-anchor="middle" font-family="Helvetica,Arial,sans-serif">OAT (°C)</text>`;
-
-  // ISA note
-  s += `<text x="${f(padL + plotW / 2)}" y="${h - 10}" font-size="7" fill="#94A3B8" text-anchor="middle" font-family="Helvetica,Arial,sans-serif">DA = PA × 1.235 + 118.8 × (OAT − 15°C)</text>`;
-
-  s += `</svg>`;
-  return s;
-}
-
-// ─── HTML report builder (shared by in-app viewing and PDF export) ─────────
 
 export const buildReportHtml = (report) => {
   const name = report?.name || 'HAL_Report';
@@ -226,16 +10,10 @@ export const buildReportHtml = (report) => {
   const outputs = report?.outputs || {};
   const units = report?.units || { altitude: 'ft', temperature: 'C', weight: 'kg', pressure: 'hPa' };
 
-  // Build chart data
-  const vmaxCurves = buildPerformanceCurves(aircraft, 'vmax');
-  const rocCurves  = buildPerformanceCurves(aircraft, 'roc');
-  const vmaxPoint  = computeCurrentPerfPoint(aircraft, outputs.DENSITY_ALT, outputs.AUW, 'vmax');
-  const rocPoint   = computeCurrentPerfPoint(aircraft, outputs.DENSITY_ALT, outputs.AUW, 'roc');
-  const isaPoint   = { oat: Number(inputs.temperature), pa: outputs.PA, da: outputs.DENSITY_ALT };
-
-  const vmaxSvg = _buildPerfSvg('vmax', vmaxCurves, vmaxPoint);
-  const rocSvg  = _buildPerfSvg('roc',  rocCurves,  rocPoint);
-  const isaSvg  = _buildIsaSvg(isaPoint);
+  // No dynamic charts in the report for now (client 20-Nov-26) — graphs are reference-only
+  // sheets inside the app.
+  // AUW is reported in pounds by default (client 20-Nov-26).
+  const auwLb = outputs.AUW != null ? Math.round(outputs.AUW * 2.20462 * 100) / 100 : '-';
 
   const isFit = outputs.status === 'FIT';
   const statusBg   = isFit ? '#F0FDF4' : '#FEF2F2';
@@ -357,7 +135,7 @@ export const buildReportHtml = (report) => {
   <div class="status-banner" style="margin-top:16px;">
     <div class="status-dot"></div>
     <div class="status-text">${statusMsg}</div>
-    <div class="status-sub">Aircraft: ${aircraft.name || '-'} &nbsp;|&nbsp; AUW: ${outputs.AUW ?? '-'} kg &nbsp;|&nbsp; DA: ${outputs.DENSITY_ALT ?? '-'} ft</div>
+    <div class="status-sub">Aircraft: ${aircraft.name || '-'} &nbsp;|&nbsp; AUW: ${auwLb} lb &nbsp;|&nbsp; DA: ${outputs.DENSITY_ALT ?? '-'} ft</div>
   </div>
 
   <!-- Aircraft & Weights side-by-side -->
@@ -386,7 +164,7 @@ export const buildReportHtml = (report) => {
           <tr><td class="lbl">Fuel</td><td class="sep"></td><td class="val">${inputs.fuel ?? '-'} kg</td></tr>
           <tr><td class="lbl">Payload / Load</td><td class="sep"></td><td class="val">${inputs.payload ?? '-'} kg</td></tr>
           <tr><td class="lbl">Additional Load</td><td class="sep"></td><td class="val">${inputs.additionalLoad ?? '-'} kg</td></tr>
-          <tr><td class="lbl" style="font-weight:800;color:#0F172A;">All Up Weight</td><td class="sep"></td><td class="val" style="font-weight:800;font-size:13px;color:#0F172A;">${outputs.AUW ?? '-'} kg</td></tr>
+          <tr><td class="lbl" style="font-weight:800;color:#0F172A;">All Up Weight</td><td class="sep"></td><td class="val" style="font-weight:800;font-size:13px;color:#0F172A;">${auwLb} lb</td></tr>
         </tbody>
       </table>
     </div>
@@ -408,7 +186,7 @@ export const buildReportHtml = (report) => {
     </div>
     <div class="perf-card">
       <div class="k">All Up Weight</div>
-      <div class="v">${outputs.AUW ?? '-'}<span class="u">kg</span></div>
+      <div class="v">${auwLb}<span class="u">lb</span></div>
     </div>
     <div class="perf-card hl">
       <div class="k">Max Collective Pitch</div>
@@ -425,19 +203,12 @@ export const buildReportHtml = (report) => {
 <!-- ═══════════════════ PAGE 2 ═══════════════════ -->
 <div class="charts-section">
   <div class="charts-header">
-    <div class="ch-title">Performance Charts</div>
-    <div class="ch-sub">${aircraft.name || '-'} &nbsp;·&nbsp; AUW ${outputs.AUW ?? '-'} kg &nbsp;·&nbsp; DA ${outputs.DENSITY_ALT ?? '-'} ft &nbsp;·&nbsp; OAT ${inputs.temperature ?? '-'}°C</div>
+    <div class="ch-title">Fit-to-Fly Evaluation</div>
+    <div class="ch-sub">${aircraft.name || '-'} &nbsp;·&nbsp; AUW ${auwLb} lb &nbsp;·&nbsp; DA ${outputs.DENSITY_ALT ?? '-'} ft &nbsp;·&nbsp; OAT ${inputs.temperature ?? '-'}°C</div>
   </div>
   <div class="accent-bar"></div>
 
   <div class="charts-body">
-    <div class="chart-row">
-      <div class="chart-box">${vmaxSvg}</div>
-      <div class="chart-box">${rocSvg}</div>
-    </div>
-    <div class="chart-full">${isaSvg}</div>
-
-    <h2>Fit-to-Fly Evaluation</h2>
     <div class="fitfly">
       <ul>${reasonsList}</ul>
     </div>

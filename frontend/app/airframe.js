@@ -144,7 +144,7 @@ export default function Airframe() {
           <Menu size={24} color="#fff" />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>HAL HPS</Text>
+        <Text style={styles.headerTitle}>Chet Cal C</Text>
 
         <TouchableOpacity
           style={[styles.micBtn, listening && styles.micBtnActive]}

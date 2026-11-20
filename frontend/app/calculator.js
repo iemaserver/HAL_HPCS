@@ -1,20 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Modal, Alert, useWindowDimensions,
+  TextInput, Modal, Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Toast from 'react-native-toast-message';
-import Svg, { Line, Path, Circle, Text as SvgText, G } from 'react-native-svg';
 import {
-  CheckCircle2, AlertTriangle, Save, Share2, RotateCcw, Menu, Mic, BarChart2,
+  CheckCircle2, AlertTriangle, Save, Share2, RotateCcw, Menu, Mic, BarChart2, LineChart,
 } from 'lucide-react-native';
 import AppMenu from '../src/components/AppMenu';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
 import {
-  fromBaseUnit, toBaseUnit, CONVERSIONS, buildJPTvsDACurve,
+  fromBaseUnit, toBaseUnit, CONVERSIONS,
 } from '../src/constants/logic';
 import { insertReport, getDeviceId } from '../src/services/database';
 import { generateAndSharePdf } from '../src/utils/pdf';
@@ -138,59 +137,6 @@ function ReadOnlyCell({
   );
 }
 
-// ── JPT vs Density Altitude graph ("JPT Calculation on Graph", PPTX slides 9/10) ──
-function JPTGraph({ aircraft, abTemp, auw, currentDA, currentJPT, width, height = 200 }) {
-  const curve = buildJPTvsDACurve(aircraft, abTemp, auw);
-  const padL = 42, padR = 12, padT = 12, padB = 26;
-  const plotW = width - padL - padR;
-  const plotH = height - padT - padB;
-
-  const jptVals = curve.map((p) => p.jpt).concat([currentJPT ?? 0, aircraft.jptMax ?? 870]);
-  const yMin = Math.floor(Math.min(...jptVals) / 50) * 50 - 25;
-  const yMax = Math.ceil(Math.max(...jptVals) / 50) * 50 + 25;
-  const xMax = 20000;
-
-  const sx = (da) => padL + (da / xMax) * plotW;
-  const sy = (jpt) => padT + (1 - (jpt - yMin) / (yMax - yMin)) * plotH;
-
-  const d = curve.map((p, i) => `${i === 0 ? 'M' : 'L'} ${sx(p.da).toFixed(1)} ${sy(p.jpt).toFixed(1)}`).join(' ');
-
-  return (
-    <Svg width={width} height={height}>
-      {[0, 5000, 10000, 15000, 20000].map((da) => (
-        <G key={da}>
-          <Line x1={sx(da)} y1={padT} x2={sx(da)} y2={padT + plotH} stroke="#E5E7EB" strokeWidth={0.7} />
-          <SvgText x={sx(da)} y={padT + plotH + 14} fontSize={9} fill={COLORS.textMuted} textAnchor="middle">
-            {da / 1000}
-          </SvgText>
-        </G>
-      ))}
-      <Line x1={padL} y1={padT} x2={padL} y2={padT + plotH} stroke="#CBD5E1" strokeWidth={1.2} />
-      <Line x1={padL} y1={padT + plotH} x2={padL + plotW} y2={padT + plotH} stroke="#CBD5E1" strokeWidth={1.2} />
-      <Path d={d} stroke={COLORS.error} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      {currentDA != null && currentJPT != null && (
-        <>
-          <Line
-            x1={padL} y1={sy(currentJPT)} x2={sx(currentDA)} y2={sy(currentJPT)}
-            stroke={COLORS.primary} strokeWidth={1} strokeDasharray="4,3" opacity={0.8}
-          />
-          <Line
-            x1={sx(currentDA)} y1={padT + plotH} x2={sx(currentDA)} y2={sy(currentJPT)}
-            stroke={COLORS.primary} strokeWidth={1} strokeDasharray="4,3" opacity={0.8}
-          />
-          <Circle cx={sx(currentDA)} cy={sy(currentJPT)} r={5} fill="#fff" stroke={COLORS.primary} strokeWidth={2.5} />
-          <SvgText x={sx(currentDA) + 8} y={sy(currentJPT) - 8} fontSize={10} fill={COLORS.primary} fontWeight="bold">
-            {`${Math.round(auw)} kg`}
-          </SvgText>
-        </>
-      )}
-      <SvgText x={padL + plotW / 2} y={height - 2} fontSize={9} fill={COLORS.textMuted} textAnchor="middle">
-        Density Altitude (k ft)
-      </SvgText>
-    </Svg>
-  );
-}
-
 // ── Calculator ────────────────────────────────────────────────────────────────
 export default function Calculator() {
   const router = useRouter();
@@ -199,7 +145,6 @@ export default function Calculator() {
     updateAircraftDefaults,
   } = useAppState();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
   const aircraft = aircraftDefaults[selectedAircraftId];
   const isFit = outputs.status === 'FIT';
 
@@ -228,12 +173,11 @@ export default function Calculator() {
   const [daUnit, setDaUnit] = useState('ft');
   const [passengerWeightUnit, setPassengerWeightUnit] = useState('kg');
   const [loadUnit, setLoadUnit] = useState('kg');
-  const [auwUnit, setAuwUnit] = useState('kg');
+  const [auwUnit, setAuwUnit] = useState('lb'); // client 20-Nov-26: AUW defaults to pounds
   const [jptUnit, setJptUnit] = useState('C');
   const [payloadLowerUnit, setPayloadLowerUnit] = useState('kg');
   const [payloadUpperUnit, setPayloadUpperUnit] = useState('kg');
 
-  const chartWidth = Math.max(200, Math.min(width - (SPACING.lg + SPACING.md) * 2, 380));
 
   // When aircraft changes: reset session-level inputs to the new aircraft's defaults.
   // Weight-breakdown fields (basic/equipment/pilot/copilot) live directly on aircraftDefaults
@@ -328,7 +272,7 @@ export default function Calculator() {
     { key: 'qnh', label: 'QNH', aliases: ['q n h', 'pressure', 'qnh'] },
     { key: 'temperature', label: 'Temperature', aliases: ['temp'] },
     {
-      key: 'aircraftWeight', label: 'Aircraft Weight', aliases: ['basic weight', 'aircraft'],
+      key: 'aircraftWeight', label: 'Aircraft Basic Weight', aliases: ['aircraft weight', 'basic weight', 'aircraft'],
     },
     { key: 'equipmentWeight', label: 'Equipment Weight', aliases: ['equipment'] },
     { key: 'pilotWeight', label: 'Pilot Weight', aliases: ['pilot'] },
@@ -423,7 +367,7 @@ export default function Calculator() {
         >
           <Menu size={20} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>HAL HPS</Text>
+        <Text style={styles.headerTitle}>Chet Cal C</Text>
         <TouchableOpacity
           onPress={toggleVoice}
           style={[styles.micBtn, listening && styles.micBtnActive]}
@@ -502,7 +446,7 @@ export default function Calculator() {
           </View>
           <View style={styles.row}>
             <EditableCell
-              required label="Aircraft Weight" value={aircraft.basicWeight} unit={basicWeightUnit}
+              required label="Aircraft Basic Weight" value={aircraft.basicWeight} unit={basicWeightUnit}
               unitOptions={['lb', 'kg']} onCommit={(v) => patchAircraft({ basicWeight: v })}
               onUnitChange={setBasicWeightUnit} testID="calc-aircraft-weight"
               highlight={activeFieldKey === 'aircraftWeight'}
@@ -530,7 +474,7 @@ export default function Calculator() {
           </View>
           <View style={styles.row}>
             <ReadOnlyCell
-              label="Empty Weight" value={outputs.EMPTY_WEIGHT} unit={emptyWeightUnit}
+              label="Operational Empty Weight" value={outputs.EMPTY_WEIGHT} unit={emptyWeightUnit}
               unitOptions={['lb', 'kg']} onUnitChange={setEmptyWeightUnit} testID="calc-empty-weight"
             />
             <EditableCell
@@ -576,7 +520,7 @@ export default function Calculator() {
               onUnitChange={setDaUnit} warn={outputs.DENSITY_ALT > 18000} testID="calc-da"
             />
             <ReadOnlyCell
-              label="All Up Weight" value={outputs.AUW} unit={auwUnit} unitOptions={['kg', 'lb']}
+              label="All Up Weight" value={outputs.AUW} unit={auwUnit} unitOptions={['lb', 'kg']}
               onUnitChange={setAuwUnit} warn={outputs.AUW > aircraft.mauw} testID="calc-auw"
             />
           </View>
@@ -609,17 +553,17 @@ export default function Calculator() {
 
         <View style={styles.divider} />
 
-        {/* ── JPT CALCULATION ON GRAPH ── (not applicable to Cheetal — client spec) */}
+        {/* ── JPT graph — reference only (client 20-Nov-26: no dynamic graphs).
+            Not applicable to Cheetal — client spec. ── */}
         {aircraft.id !== 'cheetal' && (
-          <>
-            <Text style={styles.sectionLabel}>JPT CALCULATION ON GRAPH</Text>
-            <View style={styles.chartCard}>
-              <JPTGraph
-                aircraft={aircraft} abTemp={outputs.AB_TEMP} auw={outputs.AUW}
-                currentDA={outputs.DENSITY_ALT} currentJPT={outputs.JPT} width={chartWidth}
-              />
-            </View>
-          </>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.chartsBtn, { marginTop: 0, marginBottom: SPACING.sm }]}
+            onPress={() => router.push({ pathname: '/performance-data', params: { metric: 'jpt' } })}
+            testID="view-jpt-graph-btn"
+          >
+            <LineChart size={16} color={COLORS.primaryDark} />
+            <Text style={styles.chartsBtnText}>View JPT Graph (reference)</Text>
+          </TouchableOpacity>
         )}
 
         {/* ── ACTIONS ── */}

@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import Svg, { Line, Path, Circle, Text as SvgText, G } from 'react-native-svg';
 import { COLORS } from '../constants/theme';
 import {
+  PA_DA_K, DA_TEMP_FACTOR,
   CHART_OAT_MIN, CHART_OAT_MAX, CHART_PA_MAX,
   CHART_PA_DA_CONTOURS,
 } from '../constants/logic';
@@ -67,9 +68,9 @@ export default function ISAChart({ current, width = 340, height = 240 }) {
           const color = CONTOUR_COLORS[Math.min(Math.floor(idx * CONTOUR_COLORS.length / CHART_PA_DA_CONTOURS.length), CONTOUR_COLORS.length - 1)];
           // build points inline (same formula as buildPADAContours but local)
           const pts = [];
-          const K = 1 + 118.8 * 0.00198;
+          const K = PA_DA_K;
           for (let oat = CHART_OAT_MIN; oat <= CHART_OAT_MAX; oat += 1) {
-            const pa = (da - 118.8 * (oat - 15)) / K;
+            const pa = (da - DA_TEMP_FACTOR * (oat - 15)) / K;
             if (pa >= 0 && pa <= CHART_PA_MAX) pts.push({ oat, pa });
           }
           if (pts.length < 2) return null;

@@ -31,7 +31,7 @@ const NAV_ITEMS = [
   {
     key: 'performance-data',
     label: 'Performance Data',
-    desc: 'Speed, climb & autorotation metrics',
+    desc: 'Reference graphs: speed, climb, RPM, JPT, power',
     Icon: Gauge,
     // No direct route — tapping expands this inline sublist (Figma "Menu 2" state).
     expandable: true,
@@ -56,12 +56,24 @@ const NAV_ITEMS = [
         // Shows the real, flight-manual-sourced governed Nr (353 rpm) and its 270-420 rpm
         // autorotation band — see computeAutorotationRPM() in logic.js.
       },
+      {
+        key: 'jpt',
+        label: 'JPT Graph',
+        route: '/performance-data',
+        params: { metric: 'jpt' },
+      },
+      {
+        key: 'maxpower',
+        label: 'Max Power Available',
+        route: '/performance-data',
+        params: { metric: 'maxpower' },
+      },
     ],
   },
   {
     key: 'graphs',
-    label: 'Aircraft Graphs',
-    desc: 'Flight-manual graph sheets (zoomable)',
+    label: 'Graphs by Helicopter',
+    desc: 'All reference graphs, per aircraft',
     route: '/graphs',
     Icon: LineChart,
   },
@@ -151,8 +163,8 @@ export default function AppMenu({ visible, onClose }) {
           {/* Drawer header */}
           <View style={styles.drawerHead}>
             <View>
-              <Text style={styles.appName}>HAL HPCS</Text>
-              <Text style={styles.appSub}>Helicopter Performance System</Text>
+              <Text style={styles.appName}>Chet Cal C</Text>
+              <Text style={styles.appSub}>Chetak · Cheetah · Cheetal</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <X size={18} color={COLORS.textMuted} />

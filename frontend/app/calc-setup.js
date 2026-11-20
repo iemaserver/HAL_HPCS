@@ -19,6 +19,7 @@ import {
   Menu, RotateCcw, CheckCircle2, AlertTriangle, ShieldCheck,
 } from 'lucide-react-native';
 import AppMenu from '../src/components/AppMenu';
+import SubText from '../src/components/SubText';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
 import {
@@ -95,10 +96,8 @@ function FormulaCard({ meta, applied, onApply }) {
   return (
     <View style={styles.formulaCard} testID={`cs-formula-${meta.key}`}>
       <View style={styles.formulaHead}>
-        <Text style={styles.valueLabel}>
-          {meta.label}
-          {isCustom ? <Text style={styles.changedTag}>  custom</Text> : null}
-        </Text>
+        <SubText style={styles.valueLabel}>{meta.label}</SubText>
+        {isCustom ? <Text style={[styles.changedTag, { marginLeft: 6 }]}>custom</Text> : null}
       </View>
       <Text style={styles.hint}>Variables: {meta.vars}</Text>
       <TextInput
@@ -196,7 +195,7 @@ export default function CalcSetup() {
         >
           <Menu size={20} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>HAL HPS</Text>
+        <Text style={styles.headerTitle}>Chet Cal C</Text>
         <View style={styles.headerBtn} />
       </View>
       <AppMenu visible={menuOpen} onClose={() => setMenuOpen(false)} />
@@ -339,7 +338,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card, borderRadius: RADIUS.md, padding: SPACING.md,
     marginBottom: SPACING.md, borderWidth: 1, borderColor: COLORS.border,
   },
-  formulaHead: { flexDirection: 'row', justifyContent: 'space-between' },
+  formulaHead: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap' },
   formulaInput: {
     marginTop: SPACING.sm, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.sm,
     padding: SPACING.sm, fontSize: 12.5, color: COLORS.text, backgroundColor: COLORS.bg,

@@ -186,6 +186,8 @@ Object.values(DEFAULT_AIRCRAFT).forEach((a) => {
   a.autoRpmPerKg = 0.088;    // rpm per extra kg of AUW
   a.autoRpmPer1000ft = 5;    // rpm per 1000 ft of density altitude
   a.autoRpmColdPerDeg = 2.5; // rpm lost per °C below -10°C OAT
+  a.maxCollectiveCap = 1.0;  // max power is restricted to 1.0 (client doc 20-Nov-26)
+  a.hoverWeightRef = 6600;   // hover power DΘ = (AUW_lb / 6600) * ... (client doc 20-Nov-26)
 });
 
 /**
@@ -194,9 +196,9 @@ Object.values(DEFAULT_AIRCRAFT).forEach((a) => {
  * time and the factory default is used instead, so a typo can never break the app.
  */
 export const CALC_VALUE_FIELDS = [
-  { group: 'Collective pitch', key: 'maxCollectiveSL', label: 'Max collective at sea level', hint: 'Power available. Chetak 0.75, Cheetah/Cheetal 0.80', min: 0.1, max: 3 },
-  { group: 'Collective pitch', key: 'collectiveStep', label: 'Max collective rise per 3300 ft', hint: 'Linear law, 0.05 per 3300 ft', min: 0, max: 1 },
-  { group: 'Collective pitch', key: 'hoverCollectiveSL', label: 'Hover collective required (MAUW, sea level)', hint: 'Used by the default hover-power formula', min: 0.05, max: 3 },
+  { group: 'Collective pitch', key: 'maxCollectiveSL', label: 'Max collective at sea level', hint: 'Max power at DA 0. Chetak 0.75, Cheetah/Cheetal 0.80', min: 0.1, max: 3 },
+  { group: 'Collective pitch', key: 'maxCollectiveCap', label: 'Max collective cap', hint: 'Max power is restricted to this value (1.0)', min: 0.5, max: 3 },
+  { group: 'Collective pitch', key: 'hoverWeightRef', label: 'Hover power weight constant (lb)', hint: 'The 6600 in DΘ = (AUW/6600) × (1013.25/Pmb) × (TA/288.15)', min: 1000, max: 50000 },
   { group: 'Collective pitch', key: 'collectiveMax', label: 'Collective reference maximum', hint: 'Scales hover collective into JPT', min: 0.1, max: 5 },
   { group: 'JPT', key: 'jptBase', label: 'JPT base (°C)', hint: 'JPT at idle', min: 0, max: 1500 },
   { group: 'JPT', key: 'jptRange', label: 'JPT range (°C)', hint: 'Added from idle to full collective', min: 0, max: 1500 },
@@ -284,14 +286,19 @@ export const fromBaseUnit = (value, unit) => {
  * The logic engine uses a scoped Function constructor to evaluate them with inputs.
  */
 export const DEFAULT_FORMULAS = {
-  // Pressure Altitude (ft) from elevation (ft) and QNH (hPa)
-  PA: 'elevation + (1013.25 - qnh) * 27',
+  // Pressure Altitude (ft) from elevation (ft) and QNH (hPa) — client 20-Nov-26: factor 27.31 ft per hPa (their doc said 30; client corrected to 27.31)
+  PA: 'elevation + (1013.25 - qnh) * 27.31',
   // ISA Temperature (°C) at a given Pressure Altitude (ft)
   ISA_TEMP: '15 - (pa / 1000) * 1.98',
   // Density Altitude (ft)
   DENSITY_ALT: 'pa + 118.8 * (oat - isa)',
   // Air density (kg/m^3)
   DENSITY: '1.225 * Math.pow(1 - 0.0000068756 * pa, 4.2561) * (288.15 / (oat + 273.15))',
+  // Pressure at the pressure altitude, in millibar (client doc 20-Nov-26):
+  // Pa = 1013.25 * (1 - PA / 145366.45) ^ (1 / 0.190284)
+  PRESSURE_AT_PA: '1013.25 * Math.pow(1 - pa / 145366.45, 1 / 0.190284)',
+  // Absolute temperature T_A in kelvin (client 20-Nov-26): T_A = OAT + 273.15
+  ABS_TEMP: 'oat + 273.15',
   // Above-ISA temperature deviation (°C)
   AB_TEMP: 'oat - isa',
   // Empty Weight (kg) — client PPTX: EMPTY WEIGHT = BASIC(AIRCRAFT) WEIGHT + EQUIPMENT WEIGHT + PILOT WEIGHT + COPILOT WEIGHT
@@ -307,11 +314,14 @@ export const DEFAULT_FORMULAS = {
   // Driven by hover collective required (client 12-Oct-26: JPT follows the corrected hover power).
   JPT: 'jpt_base + (collective_req / collective_max) * jpt_range + ab_temp * 1.5 + density_alt / 2000',
   // Collective pitch required to hover at current AUW / conditions (°)
-  // Hover collective required — scales with AUW/MAUW, same 0.05 per 3300 ft density-altitude rise as the max collective.
-  COLLECTIVE_REQ: '(hover_collective_sl + collective_step * (density_alt / 3300)) * (auw / mauw)',
+  // Hover power DΘ (client 20-Nov-26): (AUW / 6600) * (1013.25 / P_mb) * (T_A / 288.15)
+  // AUW is taken in lb (`auw_lb`) — the only reading consistent with Max Power 0.75/0.80
+  // (Chetak MAUW 4850 lb → 0.735). Use `auw` instead if the client confirms kg.
+  COLLECTIVE_REQ: '(auw_lb / hover_weight_ref) * (1013.25 / pressure_mb) * (abs_temp / 288.15)',
   // Collective pitch available before engine power limit is reached (°)
-  // Max collective (power available): sea-level value + 0.05 per 3300 ft of density altitude (linear).
-  COLLECTIVE_AVAIL: 'max_collective_sl + collective_step * (density_alt / 3300)',
+  // Max power DΘmax (client 20-Nov-26): ((DA / 660) * 0.01) + 0.75 (Chetak) / + 0.80 (Cheetah, Cheetal),
+  // restricted to 1.0 (matches the client's Max Power Available tables).
+  COLLECTIVE_AVAIL: 'Math.min(max_collective_cap, (density_alt / 660) * 0.01 + max_collective_sl)',
   // Headroom: how many additional degrees of collective remain before limit (°)
   COLLECTIVE_BALANCE: 'collective_avail - collective_req',
 };
@@ -320,6 +330,8 @@ export const FORMULA_META = [
   { key: 'PA', label: 'Pressure Altitude (ft)', vars: 'elevation, qnh' },
   { key: 'ISA_TEMP', label: 'ISA Temperature (°C)', vars: 'pa' },
   { key: 'DENSITY_ALT', label: 'Density Altitude (ft)', vars: 'pa, oat, isa' },
+  { key: 'PRESSURE_AT_PA', label: 'Pressure at PA, P_{mb} (millibar)', vars: 'pa' },
+  { key: 'ABS_TEMP', label: 'Absolute Temperature, T_{A} (kelvin)', vars: 'oat' },
   { key: 'DENSITY', label: 'Air Density (kg/m³)', vars: 'pa, oat' },
   { key: 'AB_TEMP', label: 'AB Temperature (°C)', vars: 'oat, isa' },
   { key: 'EMPTY_WEIGHT', label: 'Empty Weight (kg)', vars: 'basic_weight, equipment_weight, pilot_weight, copilot_weight' },
@@ -327,8 +339,8 @@ export const FORMULA_META = [
   { key: 'POWER_AVAIL', label: 'Power Available (shp)', vars: 'rated_power, density_alt' },
   { key: 'POWER_REQ', label: 'Power Required (shp)', vars: 'baseline_power_req, auw, mauw, density_alt' },
   { key: 'JPT', label: 'Jet Pipe Temperature (°C)', vars: 'collective_req, collective_max, jpt_base, jpt_range, ab_temp, density_alt' },
-  { key: 'COLLECTIVE_REQ', label: 'Hover Collective Pitch Required', vars: 'hover_collective_sl, collective_step, density_alt, auw, mauw' },
-  { key: 'COLLECTIVE_AVAIL', label: 'Max Collective Pitch Available', vars: 'max_collective_sl, collective_step, density_alt' },
+  { key: 'COLLECTIVE_REQ', label: 'Hover Power DΘ (Hover Power Required)', vars: 'auw_lb, auw, hover_weight_ref, pressure_mb, abs_temp' },
+  { key: 'COLLECTIVE_AVAIL', label: 'Max Power DΘmax (Max Collective Available)', vars: 'max_collective_sl, max_collective_cap, density_alt' },
   { key: 'COLLECTIVE_BALANCE', label: 'Collective Headroom (°)', vars: 'collective_req, collective_avail' },
 ];
 
@@ -387,7 +399,8 @@ const SAMPLE_VARS = {
   fuel: 460, crew: 0, payload: 0, add_load: 0, auw: 1900, mauw: 2200,
   rated_power: 550, baseline_power_req: 420, power_avail: 500, power_req: 400,
   jpt_base: 220, jpt_range: 300, collective_min: 0.15, collective_max: 1.1,
-  max_collective_sl: 0.75, hover_collective_sl: 0.7, collective_step: 0.05,
+  max_collective_sl: 0.75, max_collective_cap: 1.0, hover_collective_sl: 0.7, collective_step: 0.05,
+  auw_lb: 4189, hover_weight_ref: 6600, pressure_mb: 1013.25, abs_temp: 288.15,
   collective_req: 0.6, collective_avail: 0.75,
 };
 
@@ -466,6 +479,13 @@ const interpolateChartValue = (aircraft, pa, key) => {
   return 0;
 };
 
+// Number(v) when v is a real number (including 0); the default when it is empty / not a number.
+const numOr = (v, dflt) => {
+  if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) return dflt;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : dflt;
+};
+
 export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
   // Fault tolerance: invalid client values fall back to factory defaults, and a formula that
   // fails falls back to the factory formula — the app always produces a result.
@@ -475,8 +495,9 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
 
   const baseCtx = {
     elevation: Number(inputs.elevation) || 0,
-    qnh: Number(inputs.qnh) || 1013.25,
-    oat: Number(inputs.temperature) || 15,
+    // numOr, not `|| default`: 0 is a valid temperature (0 °C) and must not fall back to 15.
+    qnh: numOr(inputs.qnh, 1013.25),
+    oat: numOr(inputs.temperature, 15),
     // Legacy single-figure aircraft weight — kept in ctx for custom/user-edited formulas
     // (Settings screen) that may still reference it, but the default AUW formula below no
     // longer uses it directly; empty weight is now the sum of the four fields below.
@@ -507,6 +528,8 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
   const ZSIGMA_CORRECTION = interpolateChartValue(aircraft, PA, 'zSigma');
   const DENSITY_ALT = DENSITY_ALT_RAW + ZSIGMA_CORRECTION;
   const DENSITY = ev('DENSITY', { ...baseCtx, pa: PA });
+  const PRESSURE_PA = ev('PRESSURE_AT_PA', { ...baseCtx, pa: PA });
+  const ABS_TEMP = ev('ABS_TEMP', baseCtx);
   const AB_TEMP = ev('AB_TEMP', { ...baseCtx, isa: ISA_TEMP });
   const EMPTY_WEIGHT = ev('EMPTY_WEIGHT', baseCtx);
   const AUW = ev('AUW', { ...baseCtx, empty_weight: EMPTY_WEIGHT });
@@ -543,10 +566,13 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     collective_min: aircraft.collectiveMin ?? 0.15,
     collective_max: aircraft.collectiveMax ?? 1.1,
     max_collective_sl: aircraft.maxCollectiveSL ?? 0.75,
-    hover_collective_sl: aircraft.hoverCollectiveSL ?? 0.7,
-    collective_step: aircraft.collectiveStep ?? 0.05,
+    max_collective_cap: aircraft.maxCollectiveCap ?? 1.0,
+    hover_weight_ref: aircraft.hoverWeightRef ?? 6600,
     density_alt: DENSITY_ALT,
     auw: AUW,
+    auw_lb: AUW * CONVERSIONS.kg_to_lb,
+    pressure_mb: PRESSURE_PA,
+    abs_temp: ABS_TEMP,
   };
   // Placeholder chart correction (see interpolateChartValue above) — 0 unless Dθ1-4 entered.
   const DTHETA_CORRECTION = interpolateChartValue(aircraft, PA, 'dTheta');
@@ -609,7 +635,7 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
   }
 
   issues.forEach((k) => {
-    const label = FORMULA_META.find((m) => m.key === k)?.label ?? k;
+    const label = (FORMULA_META.find((m) => m.key === k)?.label ?? k).replace(/_\{([^}]*)\}/g, '$1');
     warnings.push(`Custom formula "${label}" failed — the factory formula was used instead.`);
   });
   fixedValues.forEach((k) => {
@@ -622,6 +648,8 @@ export const computePerformance = (inputs, formulas = DEFAULT_FORMULAS) => {
     ISA_TEMP: round(ISA_TEMP),
     DENSITY_ALT: round(DENSITY_ALT),
     DENSITY: round(DENSITY, 4),
+    PRESSURE_PA: round(PRESSURE_PA),
+    ABS_TEMP: round(ABS_TEMP),
     AB_TEMP: round(AB_TEMP),
     EMPTY_WEIGHT: round(EMPTY_WEIGHT),
     AUW: round(AUW),
@@ -747,9 +775,13 @@ export const computeCurrentPerfPoint = (aircraft, da_ft, auw_kg, type, oat_c = 1
 };
 
 /* ---- PA vs Density Altitude ISA conversion chart (COMMON GRAPHS bottom-right) ---- */
-// Formula: DA = PA × 1.23526 + 118.8 × (OAT − 15)
-// Rearranged: PA = (DA − 118.8 × (OAT − 15)) / 1.23526
-const _ISA_K = 1 + 118.8 * (1.98 / 1000); // ≈ 1.23526
+// DA = PA × K + DA_TEMP_FACTOR × (OAT − 15), with K = 1 + DA_TEMP_FACTOR × ISA_LAPSE / 1000
+// Rearranged: PA = (DA − DA_TEMP_FACTOR × (OAT − 15)) / K
+// Shared constants (client 20-Nov-26): ISA lapse 1.98 °C per 1000 ft (their doc said 2; client confirmed 1.98).
+export const ISA_LAPSE_PER_1000FT = 1.98;
+export const DA_TEMP_FACTOR = 118.8; // ft per °C above ISA — updated in the density-altitude step
+export const PA_DA_K = 1 + DA_TEMP_FACTOR * (ISA_LAPSE_PER_1000FT / 1000);
+const _ISA_K = PA_DA_K;
 
 export const CHART_OAT_MIN = -30;
 export const CHART_OAT_MAX = 50;
@@ -757,8 +789,8 @@ export const CHART_PA_MAX = 20000;
 export const CHART_PA_DA_CONTOURS = [0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000, 20000];
 
 /* ---------------- DEFAULT SETTINGS — ZPn/Tn REFERENCE TABLE (page 2/2) ---------------- */
-// Client PPTX slide 8: ZPn = ZP0 + 2000n ft (computed), Tn = T0 - (2n × 1.98) °C (computed) —
-// same 1.98 lapse-rate constant already used by ISA_TEMP above. ZP0/T0 themselves are plain
+// Client PPTX slide 8: ZPn = ZP0 + 2000n ft (computed), Tn = T0 - (2n × lapse) °C (computed) —
+// same lapse-rate constant (1.98 °C per 1000 ft) used by ISA_TEMP above. ZP0/T0 themselves are plain
 // user-entered fields on `aircraft` (see DEFAULT_AIRCRAFT) — no formula given for them.
 export const buildAltitudeTempTable = (aircraft) => {
   const zp0 = Number(aircraft.zp0) || 0;
@@ -768,7 +800,7 @@ export const buildAltitudeTempTable = (aircraft) => {
     return {
       n,
       zp: zp0 + 2000 * n,
-      t: round(t0 - n * 2 * 1.98),
+      t: round(t0 - n * 2 * ISA_LAPSE_PER_1000FT),
     };
   });
 };
@@ -782,12 +814,15 @@ export const buildJPTvsDACurve = (aircraft, abTemp, auwKg, formulas = DEFAULT_FO
   const ev = (key, ctx) => evalFormula(key, formulas, ctx);
   const points = [];
   for (let da = 0; da <= 20000; da += 1000) {
+    // Hold the current above-ISA deviation: DA = PA + K·dT  →  PA = DA − K·dT, OAT = ISA(PA) + dT.
+    const pa = da - DA_TEMP_FACTOR * abTemp;
+    const oat = ev('ISA_TEMP', { pa }) + abTemp;
     const collective_req = ev('COLLECTIVE_REQ', {
-      hover_collective_sl: aircraft.hoverCollectiveSL ?? 0.7,
-      collective_step: aircraft.collectiveStep ?? 0.05,
       auw: auwKg,
-      mauw: aircraft.mauw,
-      density_alt: da,
+      auw_lb: auwKg * CONVERSIONS.kg_to_lb,
+      hover_weight_ref: aircraft.hoverWeightRef ?? 6600,
+      pressure_mb: ev('PRESSURE_AT_PA', { pa }),
+      abs_temp: ev('ABS_TEMP', { oat }),
     });
     const jpt = ev('JPT', {
       collective_req,
@@ -806,7 +841,7 @@ export const buildPADAContours = () =>
   CHART_PA_DA_CONTOURS.map((da) => {
     const points = [];
     for (let oat = CHART_OAT_MIN; oat <= CHART_OAT_MAX; oat += 1) {
-      const pa = (da - 118.8 * (oat - 15)) / _ISA_K;
+      const pa = (da - DA_TEMP_FACTOR * (oat - 15)) / _ISA_K;
       if (pa >= 0 && pa <= CHART_PA_MAX) points.push({ oat, pa });
     }
     return { da, points };

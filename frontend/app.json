@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "HAL Helicopter Performance",
+    "name": "Chet Cal C",
     "slug": "hal-hpcs",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -41,8 +41,8 @@
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "Allow HAL Helicopter Performance to use the microphone for voice input.",
-          "speechRecognitionPermission": "Allow HAL Helicopter Performance to use speech recognition for voice input."
+          "microphonePermission": "Allow Chet Cal C to use the microphone for voice input.",
+          "speechRecognitionPermission": "Allow Chet Cal C to use speech recognition for voice input."
         }
       ],
       "expo-sharing",

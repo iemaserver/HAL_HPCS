@@ -8,7 +8,9 @@ import { Menu, Mic, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, SHADOW } from '../src/constants/theme';
 import { useAppState } from '../src/store/AppState';
 import AppMenu from '../src/components/AppMenu';
-import { fromBaseUnit, toBaseUnit, buildAltitudeTempTable } from '../src/constants/logic';
+import {
+  fromBaseUnit, toBaseUnit, buildAltitudeTempTable, ISA_LAPSE_PER_1000FT,
+} from '../src/constants/logic';
 import { useVoiceFieldControl } from '../src/hooks/useVoiceFieldControl';
 
 // ── Voice control: field registry (label/aliases only — unit-aware conversion happens
@@ -337,7 +339,7 @@ export default function DefaultSettings() {
         >
           <Menu size={20} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>HAL HPS</Text>
+        <Text style={styles.headerTitle}>Chet Cal C</Text>
         <TouchableOpacity
           onPress={toggle}
           style={[styles.micBtn, listening && styles.micBtnActive]}
@@ -412,7 +414,7 @@ export default function DefaultSettings() {
                 onUnitChange={setEquipmentWeightUnit} testID="ds-equipment-weight"
               />
               <ReadOnlyCell
-                label="Empty Weight" value={emptyWeight} unit={emptyWeightUnit}
+                label="Operational Empty Weight" value={emptyWeight} unit={emptyWeightUnit}
                 unitOptions={['lb', 'kg']} onUnitChange={setEmptyWeightUnit} testID="ds-empty-weight"
               />
             </View>
@@ -457,7 +459,7 @@ export default function DefaultSettings() {
                 unitOptions={['ft', 'm']} onUnitChange={setZp0Unit} testID="ds-zp1-preview"
               />
               <ReadOnlyCell
-                label="T1 = T0 - (2×1.98)" value={altTable[0].t} unit={t0Unit}
+                label={`T1 = T0 - (2×${ISA_LAPSE_PER_1000FT})`} value={altTable[0].t} unit={t0Unit}
                 unitOptions={['C', 'F']} onUnitChange={setT0Unit} testID="ds-t1-preview"
               />
             </View>
@@ -481,7 +483,7 @@ export default function DefaultSettings() {
                   unitOptions={['ft', 'm']} onUnitChange={setZp0Unit} testID={`ds-zp${row.n}`}
                 />
                 <ReadOnlyCell
-                  label={`T${row.n} = T0 - (${row.n * 2}×1.98)`} value={row.t} unit={t0Unit}
+                  label={`T${row.n} = T0 - (${row.n * 2}×${ISA_LAPSE_PER_1000FT})`} value={row.t} unit={t0Unit}
                   unitOptions={['C', 'F']} onUnitChange={setT0Unit} testID={`ds-t${row.n}`}
                 />
               </View>
