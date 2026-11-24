@@ -159,12 +159,14 @@ export const buildReportHtml = (report) => {
       <table>
         <thead><tr><th colspan="3">Component</th></tr></thead>
         <tbody>
-          <tr><td class="lbl">AC Empty Weight</td><td class="sep"></td><td class="val">${inputs.acWeight ?? '-'} kg</td></tr>
-          <tr><td class="lbl">Crew Weight</td><td class="sep"></td><td class="val">${inputs.crewWeight ?? '-'} kg</td></tr>
-          <tr><td class="lbl">Fuel</td><td class="sep"></td><td class="val">${inputs.fuel ?? '-'} kg</td></tr>
-          <tr><td class="lbl">Payload / Load</td><td class="sep"></td><td class="val">${inputs.payload ?? '-'} kg</td></tr>
-          <tr><td class="lbl">Additional Load</td><td class="sep"></td><td class="val">${inputs.additionalLoad ?? '-'} kg</td></tr>
-          <tr><td class="lbl" style="font-weight:800;color:#0F172A;">All Up Weight</td><td class="sep"></td><td class="val" style="font-weight:800;font-size:13px;color:#0F172A;">${auwLb} lb</td></tr>
+          <tr><td class="lbl">Aircraft Basic Weight</td><td class="sep"></td><td class="val">${aircraft.basicWeight ?? '-'} kg</td></tr>
+          <tr><td class="lbl">Equipment Weight</td><td class="sep"></td><td class="val">${aircraft.equipmentWeight ?? '-'} kg</td></tr>
+          <tr><td class="lbl">Pilot + Copilot Weight</td><td class="sep"></td><td class="val">${((Number(aircraft.pilotWeight) || 0) + (Number(aircraft.copilotWeight) || 0))} kg</td></tr>
+          <tr><td class="lbl">Operational Empty Weight</td><td class="sep"></td><td class="val">${outputs.EMPTY_WEIGHT ?? '-'} kg</td></tr>
+          <tr><td class="lbl">Passenger Weight</td><td class="sep"></td><td class="val">${inputs.crewWeight ?? '-'} kg</td></tr>
+          <tr><td class="lbl">Fuel Weight</td><td class="sep"></td><td class="val">${inputs.fuel ?? '-'} kg</td></tr>
+          <tr><td class="lbl">Load</td><td class="sep"></td><td class="val">${inputs.payload ?? '-'} kg</td></tr>
+          <tr><td class="lbl" style="font-weight:800;color:#0F172A;">All Up Weight</td><td class="sep"></td><td class="val" style="font-weight:800;font-size:13px;color:#0F172A;">${auwLb} lb (${outputs.AUW ?? '-'} kg)</td></tr>
         </tbody>
       </table>
     </div>
